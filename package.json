@@ -1,0 +1,12 @@
+{
+  "name": "factory-clicker-e2e",
+  "version": "1.0.0",
+  "description": "Playwright integration test harness for Flutter Factory Clicker",
+  "scripts": {
+    "test": "playwright test",
+    "serve": "npx serve build/web -l 8080"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.1"
+  }
+}
