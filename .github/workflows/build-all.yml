@@ -1,0 +1,49 @@
+name: Build & Package Binaries
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-web:
+    name: Build Web Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Build Web
+        run: flutter build web --release
+      - name: Upload Web Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-clicker-web
+          path: build/web/
+
+  build-windows:
+    name: Build Windows Release (.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Build Windows
+        run: flutter build windows --release
+      - name: Upload Windows Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-clicker-windows-x64
+          path: build/windows/x64/runner/Release/
