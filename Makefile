@@ -38,6 +38,12 @@ build-web:
 
 build-linux:
 	@echo "==> Building Flutter Linux native binary..."
+	@pkg-config --exists gtk+-3.0 || { \
+		echo "ERROR: Missing Linux desktop build dependencies (GTK3 headers)."; \
+		echo "Please install them on Ubuntu/Debian by running:"; \
+		echo "    sudo apt-get update && sudo apt-get install -y libgtk-3-dev pkg-config ninja-build"; \
+		exit 1; \
+	}
 	$(FLUTTER) build linux --release
 
 run-web:
