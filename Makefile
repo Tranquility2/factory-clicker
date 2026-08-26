@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 FLUTTER ?= $(shell which flutter 2>/dev/null || echo "$(HOME)/development/flutter/bin/flutter")
 
-.PHONY: all help analyze clean build-web build-linux build-windows run-web serve test-e2e
+.PHONY: all help analyze clean build-web build-linux run-web serve test-e2e
 
 all: analyze build-web
 
@@ -10,12 +10,13 @@ help:
 	@echo "Factory Clicker Makefile Targets:"
 	@echo "  make build-web      - Compile production Web release (build/web)"
 	@echo "  make build-linux    - Compile native Linux binary (build/linux/x64/release/bundle)"
-	@echo "  make build-windows  - Compile native Windows binary (build/windows/x64/runner/Release)"
 	@echo "  make run-web        - Run Flutter web dev server"
 	@echo "  make serve          - Serve production web build locally on port 8080"
 	@echo "  make test-e2e       - Execute Playwright integration test suite"
 	@echo "  make analyze        - Run static analysis checks"
 	@echo "  make clean          - Clean build cache and temporary artifacts"
+	@echo ""
+	@echo "Note: To build for Windows, run ./build-windows.ps1 in Windows PowerShell."
 
 analyze:
 	@echo "==> Running Flutter static analysis..."
@@ -33,19 +34,6 @@ build-web:
 build-linux:
 	@echo "==> Building Flutter Linux native binary..."
 	$(FLUTTER) build linux --release
-
-build-windows:
-	@echo "==> Building Flutter Windows native binary..."
-	@if [ "$$(uname -s)" = "Linux" ]; then \
-		echo "Note: When building for Windows from WSL/Linux, run this on host Windows PowerShell:"; \
-		echo "      flutter build windows --release"; \
-		if command -v powershell.exe >/dev/null 2>&1; then \
-			echo "Attempting build via host PowerShell..."; \
-			powershell.exe -Command "flutter build windows --release" || echo "Please install Flutter on Windows host or use GitHub Actions."; \
-		fi; \
-	else \
-		$(FLUTTER) build windows --release; \
-	fi
 
 run-web:
 	@echo "==> Starting Flutter Web development server..."
