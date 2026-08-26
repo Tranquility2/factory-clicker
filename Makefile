@@ -2,9 +2,11 @@
 SHELL := /bin/bash
 FLUTTER ?= $(shell which flutter 2>/dev/null || echo "$(HOME)/development/flutter/bin/flutter")
 
-.PHONY: all help analyze clean build-web build-linux run-web serve test-e2e
+.PHONY: all default help --help analyze clean build-web build-linux run-web serve test-e2e
 
-all: analyze build-web
+default: help
+
+--help: help
 
 help:
 	@echo "Factory Clicker Makefile Targets:"
@@ -15,8 +17,11 @@ help:
 	@echo "  make test-e2e       - Execute Playwright integration test suite"
 	@echo "  make analyze        - Run static analysis checks"
 	@echo "  make clean          - Clean build cache and temporary artifacts"
+	@echo "  make all            - Run analyze and build-web"
 	@echo ""
 	@echo "Note: To build for Windows, run ./build-windows.ps1 in Windows PowerShell."
+
+all: analyze build-web
 
 analyze:
 	@echo "==> Running Flutter static analysis..."
