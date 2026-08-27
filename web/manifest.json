@@ -1,12 +1,12 @@
 {
-    "name": "factory_clicker",
-    "short_name": "factory_clicker",
+    "name": "Factory Clicker",
+    "short_name": "FactoryClicker",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#0E1116",
+    "theme_color": "#F59E0B",
+    "description": "An incremental factory automation game inspired by Factorio and Cookie Clicker.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {
