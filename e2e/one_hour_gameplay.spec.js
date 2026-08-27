@@ -28,7 +28,7 @@ test.describe('1-Hour Full Progression Simulation Playthrough', () => {
     });
 
     // Ensure we are on CRAFTING tab
-    await page.getByRole('tab', { name: 'CRAFTING' }).click();
+    await page.getByText('CRAFTING').first().click();
     await page.waitForTimeout(600);
     await page.screenshot({ path: './play-stage1-early-game.png' });
 
@@ -69,7 +69,7 @@ test.describe('1-Hour Full Progression Simulation Playthrough', () => {
     await page.evaluate((s) => window['__gameDebug'].loadState(JSON.stringify(s)), stage2State);
 
     // Switch to MACHINES tab to see all purchased drills and furnaces
-    await page.getByRole('tab', { name: 'MACHINES' }).click();
+    await page.getByText('MACHINES').first().click();
     await page.waitForTimeout(600);
     await page.screenshot({ path: './play-stage2-smelting-automation.png' });
 
@@ -112,7 +112,7 @@ test.describe('1-Hour Full Progression Simulation Playthrough', () => {
     await page.evaluate((s) => window['__gameDebug'].loadState(JSON.stringify(s)), stage3State);
 
     // Switch to RESEARCH tab to see research progression
-    await page.getByRole('tab', { name: 'RESEARCH' }).click();
+    await page.getByText('RESEARCH').first().click();
     await page.waitForTimeout(600);
     await page.screenshot({ path: './play-stage3-advanced-assembly.png' });
 
@@ -151,7 +151,7 @@ test.describe('1-Hour Full Progression Simulation Playthrough', () => {
     await page.evaluate((s) => window['__gameDebug'].loadState(JSON.stringify(s)), stage4State);
 
     // Switch to ROCKET SILO tab
-    await page.getByRole('tab', { name: 'ROCKET SILO' }).click();
+    await page.getByText('ROCKET SILO').first().click();
     await page.waitForTimeout(800);
     await page.screenshot({ path: './play-stage4-rocket-silo-ready.png' });
 
