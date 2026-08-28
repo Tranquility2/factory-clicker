@@ -421,6 +421,7 @@ class FactoryVisualizerGame extends FlameGame {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.4,
     );
+    _drawMachineActivity(canvas, card, rect, node, index);
 
     _paintText(
       canvas,
@@ -513,6 +514,188 @@ class FactoryVisualizerGame extends FlameGame {
           ).createShader(fill),
       );
     }
+  }
+
+  void _drawMachineActivity(
+    Canvas canvas,
+    RRect clip,
+    Rect rect,
+    _FactoryNode node,
+    int index,
+  ) {
+    canvas.save();
+    canvas.clipRRect(clip);
+
+    if (!node.isRunning) {
+      final warningPulse = 0.08 + (sin(_time * 4 + index) + 1) * 0.04;
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment(-1 + (_time * 0.08 % 2), -1),
+            end: Alignment(1 + (_time * 0.08 % 2), 1),
+            colors: [
+              Colors.transparent,
+              (node.isComplete
+                      ? const Color(0xFF06B6D4)
+                      : const Color(0xFFEF4444))
+                  .withValues(alpha: warningPulse),
+              Colors.transparent,
+            ],
+          ).createShader(rect),
+      );
+      canvas.restore();
+      return;
+    }
+
+    switch (node.type.category) {
+      case BuildingCategory.mining:
+        _drawMiningActivity(canvas, rect, node.color, index);
+      case BuildingCategory.smelting:
+        _drawFurnaceActivity(canvas, rect, node.color, index);
+      case BuildingCategory.assembling:
+        _drawAssemblerActivity(canvas, rect, node.color, index);
+      case BuildingCategory.researchLab:
+        _drawLabActivity(canvas, rect, node.color, index);
+      case BuildingCategory.rocketSilo:
+        _drawRocketActivity(canvas, rect, node.color, index);
+    }
+    canvas.restore();
+  }
+
+  void _drawMiningActivity(Canvas canvas, Rect rect, Color color, int index) {
+    final center = Offset(rect.left + 18, rect.top + 18);
+    final sweep = _time * 4 + index;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: 14),
+      sweep,
+      pi * 0.9,
+      false,
+      Paint()
+        ..shader = SweepGradient(
+          colors: [Colors.transparent, color, Colors.transparent],
+        ).createShader(Rect.fromCircle(center: center, radius: 14))
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+    for (var particle = 0; particle < 4; particle++) {
+      final progress = (_time * 0.7 + particle * 0.24 + index * 0.1) % 1;
+      canvas.drawCircle(
+        Offset(
+          rect.left + 8 + progress * 42,
+          rect.bottom - 5 - sin(progress * pi) * 8,
+        ),
+        1.5 * (1 - progress * 0.5),
+        Paint()..color = color.withValues(alpha: 1 - progress * 0.5),
+      );
+    }
+  }
+
+  void _drawFurnaceActivity(Canvas canvas, Rect rect, Color color, int index) {
+    final heatCenter = Offset(rect.right - 28, rect.center.dy);
+    final heatPulse = 0.45 + sin(_time * 5 + index) * 0.15;
+    canvas.drawCircle(
+      heatCenter,
+      34,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [
+            color.withValues(alpha: heatPulse),
+            color.withValues(alpha: 0.08),
+            Colors.transparent,
+          ],
+        ).createShader(Rect.fromCircle(center: heatCenter, radius: 34)),
+    );
+    for (var spark = 0; spark < 5; spark++) {
+      final progress = (_time * 0.85 + spark * 0.2 + index * 0.07) % 1;
+      final x = heatCenter.dx + sin(spark * 2.1) * 14;
+      final y = rect.bottom - 8 - progress * 55;
+      canvas.drawCircle(
+        Offset(x, y),
+        1.8 * (1 - progress),
+        Paint()..color = Colors.orangeAccent.withValues(alpha: 1 - progress),
+      );
+    }
+  }
+
+  void _drawAssemblerActivity(
+    Canvas canvas,
+    Rect rect,
+    Color color,
+    int index,
+  ) {
+    final center = Offset(rect.right - 25, rect.center.dy);
+    for (var gear = 0; gear < 2; gear++) {
+      final gearCenter = center + Offset(gear * -15.0, gear * 11.0);
+      final radius = gear == 0 ? 12.0 : 8.0;
+      canvas.save();
+      canvas.translate(gearCenter.dx, gearCenter.dy);
+      canvas.rotate(_time * (gear == 0 ? 2.5 : -3.2) + index);
+      final paint = Paint()
+        ..color = color.withValues(alpha: 0.38)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      canvas.drawCircle(Offset.zero, radius * 0.55, paint);
+      for (var tooth = 0; tooth < 8; tooth++) {
+        final angle = tooth * pi / 4;
+        canvas.drawLine(
+          Offset(cos(angle) * radius * 0.55, sin(angle) * radius * 0.55),
+          Offset(cos(angle) * radius, sin(angle) * radius),
+          paint,
+        );
+      }
+      canvas.restore();
+    }
+  }
+
+  void _drawLabActivity(Canvas canvas, Rect rect, Color color, int index) {
+    final center = Offset(rect.right - 28, rect.center.dy);
+    canvas.drawCircle(
+      center,
+      5,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [Colors.white, color, Colors.transparent],
+        ).createShader(Rect.fromCircle(center: center, radius: 8)),
+    );
+    for (var particle = 0; particle < 3; particle++) {
+      final angle =
+          _time * (1.5 + particle * 0.25) + particle * pi * 2 / 3 + index;
+      final orbit = 10.0 + particle * 4;
+      canvas.drawCircle(
+        center + Offset(cos(angle), sin(angle)) * orbit,
+        2,
+        Paint()
+          ..color = Color.lerp(
+            color,
+            Colors.white,
+            particle / 3,
+          )!.withValues(alpha: 0.8),
+      );
+    }
+  }
+
+  void _drawRocketActivity(Canvas canvas, Rect rect, Color color, int index) {
+    final flameOrigin = Offset(rect.left + 21, rect.top + 31);
+    final flameLength = 10 + sin(_time * 9 + index) * 4;
+    final flamePath = Path()
+      ..moveTo(flameOrigin.dx - 4, flameOrigin.dy)
+      ..quadraticBezierTo(
+        flameOrigin.dx,
+        flameOrigin.dy + flameLength,
+        flameOrigin.dx + 4,
+        flameOrigin.dy,
+      )
+      ..close();
+    canvas.drawPath(
+      flamePath,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.white, color, Colors.transparent],
+        ).createShader(flamePath.getBounds()),
+    );
   }
 
   void _drawEmptyState(Canvas canvas) {

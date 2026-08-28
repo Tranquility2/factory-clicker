@@ -155,7 +155,11 @@ test.describe('1-Hour Full Progression Simulation Playthrough', () => {
     // STAGE 5: Launch Rocket & Verify Prestige
     // -------------------------------------------------------------
     await page.getByRole('button', { name: 'Launch Rocket Prestige' }).click();
-    await page.waitForTimeout(1000);
+    await expect(page.getByText('IGNITION IN 3').first()).toBeVisible();
+    await page.waitForFunction(() => {
+      const state = JSON.parse(window['__gameDebug'].getState());
+      return state.totalRocketLaunches === 1;
+    });
 
     // Verify Space Science was awarded
     const postPrestigeRaw = await page.evaluate(() => window['__gameDebug'].getState());

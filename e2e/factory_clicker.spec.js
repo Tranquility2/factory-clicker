@@ -348,4 +348,27 @@ test.describe('Factory Clicker E2E Integration Suite', () => {
     // Trigger save and state export validation
     expect(loadedState.unlockedTechIds.length).toBeGreaterThan(0);
   });
+
+  test('11. Manual mining shows impact feedback and grants resources', async ({ page }) => {
+    await page.waitForTimeout(750);
+    await page.evaluate(() => {
+      const enableAccessibility = document.querySelector(
+        'flt-semantics-placeholder'
+      );
+      if (enableAccessibility) enableAccessibility.click();
+    });
+    const beforeRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const before = JSON.parse(beforeRaw);
+
+    await page.getByRole('button', { name: 'Gather Coal' }).click();
+    await expect(page.getByLabel('Gained 1 Coal')).toBeVisible();
+
+    const afterRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const after = JSON.parse(afterRaw);
+    expect(after.inventory.coal).toBe(before.inventory.coal + 1);
+  });
 });
