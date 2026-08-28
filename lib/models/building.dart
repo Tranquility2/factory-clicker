@@ -85,8 +85,8 @@ enum BuildingType {
     category: BuildingCategory.researchLab,
     baseCost: {
       ResourceType.ironPlate: 10,
-      ResourceType.ironGear: 10,
-      ResourceType.electronicCircuit: 5,
+      ResourceType.copperPlate: 10,
+      ResourceType.ironGear: 5,
     },
     costMultiplier: 1.25,
     craftSpeed: 1.0,

@@ -405,16 +405,22 @@ class GameEngine extends ChangeNotifier {
     };
   }
 
-  bool startResearch(String techId) {
+  bool canStartResearch(String techId) {
     final tech = Technology.getById(techId);
     if (tech == null) return false;
     if (state.unlockedTechIds.contains(techId)) return false;
+    if (state.activeResearchId != null) return false;
+    final lab = state.buildings[BuildingType.researchLab];
+    if (lab == null || lab.count == 0) return false;
 
-    // Check prerequisites
     for (final req in tech.prerequisites) {
       if (!state.unlockedTechIds.contains(req)) return false;
     }
+    return true;
+  }
 
+  bool startResearch(String techId) {
+    if (!canStartResearch(techId)) return false;
     state.activeResearchId = techId;
     state.researchProgressTicks = 0.0;
     notifyListeners();

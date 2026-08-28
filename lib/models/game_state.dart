@@ -90,7 +90,9 @@ class GameState {
   }
 
   bool isBuildingUnlocked(BuildingType type) {
-    if (type == BuildingType.burnerMiner || type == BuildingType.stoneFurnace) {
+    if (type == BuildingType.burnerMiner ||
+        type == BuildingType.stoneFurnace ||
+        type == BuildingType.researchLab) {
       return true;
     }
     for (final tech in Technology.all) {

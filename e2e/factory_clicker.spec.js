@@ -211,7 +211,56 @@ test.describe('Factory Clicker E2E Integration Suite', () => {
     expect(JSON.parse(migratedRaw).rocketPartsBuilt).toBe(100);
   });
 
-  test('7. Full tech tree unlock and state persistence', async ({ page }) => {
+  test('7. Research Lab completes Automation I through the UI', async ({ page }) => {
+    await page.waitForTimeout(750);
+    await page.evaluate((state) => {
+      window['__gameDebug'].loadState(JSON.stringify(state));
+      const enableAccessibility = document.querySelector(
+        'flt-semantics-placeholder'
+      );
+      if (enableAccessibility) enableAccessibility.click();
+    }, {
+      inventory: {
+        ironPlate: 100,
+        copperPlate: 100,
+        ironGear: 100
+      },
+      buildings: {},
+      unlockedTechIds: [],
+      gameSpeedMultiplier: 10,
+      lastSaveTimestamp: Date.now()
+    });
+
+    await page.getByRole('button', { name: 'Buy Research Lab' }).click();
+    const beforeRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const before = JSON.parse(beforeRaw);
+    expect(before.buildings.research_lab.count).toBe(1);
+
+    await page.getByText('RESEARCH').first().click();
+    await page.getByRole('button', { name: 'Research Automation I' }).click();
+    await page.waitForFunction(() => {
+      const state = JSON.parse(window['__gameDebug'].getState());
+      return state.unlockedTechIds.includes('automation_1');
+    });
+
+    const afterRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const after = JSON.parse(afterRaw);
+    expect(after.activeResearchId).toBeNull();
+    expect(after.inventory.ironPlate).toBeCloseTo(
+      before.inventory.ironPlate - 10,
+      3
+    );
+    expect(after.inventory.copperPlate).toBeCloseTo(
+      before.inventory.copperPlate - 10,
+      3
+    );
+  });
+
+  test('8. Full tech tree unlock and state persistence', async ({ page }) => {
     // Unlock all technologies
     await page.evaluate(() => window['__gameDebug'].unlockAllTech());
 
@@ -224,7 +273,7 @@ test.describe('Factory Clicker E2E Integration Suite', () => {
     expect(state.unlockedTechIds).toContain('rocketry');
   });
 
-  test('8. Reset Save clears persisted progress', async ({ page }) => {
+  test('9. Reset Save clears persisted progress', async ({ page }) => {
     await page.waitForTimeout(750);
     await page.evaluate(() => {
       const enableAccessibility = document.querySelector(
@@ -259,7 +308,7 @@ test.describe('Factory Clicker E2E Integration Suite', () => {
     expect(state.unlockedTechIds).toEqual([]);
   });
 
-  test('9. End-to-end automation simulation and rocket launch prestige', async ({ page }) => {
+  test('10. End-to-end automation simulation and rocket launch prestige', async ({ page }) => {
     // Accelerate simulation
     await page.evaluate(() => window['__gameDebug'].setSpeed(20));
     await page.evaluate(() => window['__gameDebug'].unlockAllTech());
