@@ -28,33 +28,47 @@ class FactoryVisualizerGame extends FlameGame {
   void render(Canvas canvas) {
     super.render(canvas);
     final viewport = Rect.fromLTWH(0, 0, size.x, size.y);
-    _drawShaderBackground(canvas, viewport);
+    _drawShaderFloor(canvas, viewport);
 
     final state = _state;
     if (state == null) return;
 
-    final modules = _buildTelemetry(state);
-    _drawHeader(canvas, modules, viewport);
-    _drawModules(canvas, modules);
+    final nodes = _buildFactoryNodes(state);
+    _drawHeader(canvas, nodes, viewport);
+    if (nodes.isEmpty) {
+      _drawEmptyState(canvas);
+    } else {
+      final positions = _layoutNodes(nodes);
+      _drawBelts(canvas, nodes, positions);
+      _drawNodes(canvas, nodes, positions);
+      _drawStageLabels(canvas, positions);
+    }
     _drawScanlines(canvas, viewport);
   }
 
-  void _drawShaderBackground(Canvas canvas, Rect viewport) {
-    final travel = (sin(_time * 0.22) + 1) / 2;
-    final shader = RadialGradient(
-      center: Alignment(-0.9 + travel * 1.8, -0.8),
-      radius: 1.35,
-      colors: const [Color(0xFF26344D), Color(0xFF121925), Color(0xFF090C11)],
-      stops: const [0, 0.42, 1],
-    ).createShader(viewport);
-    canvas.drawRect(viewport, Paint()..shader = shader);
+  void _drawShaderFloor(Canvas canvas, Rect viewport) {
+    final travel = (sin(_time * 0.24) + 1) / 2;
+    canvas.drawRect(
+      viewport,
+      Paint()
+        ..shader = RadialGradient(
+          center: Alignment(-0.9 + travel * 1.8, -0.8),
+          radius: 1.4,
+          colors: const [
+            Color(0xFF26344D),
+            Color(0xFF111824),
+            Color(0xFF080B10),
+          ],
+          stops: const [0, 0.38, 1],
+        ).createShader(viewport),
+    );
 
     final gridPaint = Paint()
-      ..color = const Color(0x243D4C63)
+      ..color = const Color(0x253D4C63)
       ..strokeWidth = 1;
-    const spacing = 26.0;
+    const spacing = 24.0;
+    final drift = (_time * 3) % spacing;
     for (double x = -spacing; x < size.x + spacing; x += spacing) {
-      final drift = (_time * 3) % spacing;
       canvas.drawLine(
         Offset(x + drift, 0),
         Offset(x + drift, size.y),
@@ -66,20 +80,13 @@ class FactoryVisualizerGame extends FlameGame {
     }
   }
 
-  void _drawHeader(
-    Canvas canvas,
-    List<_MachineTelemetry> modules,
-    Rect viewport,
-  ) {
-    final running = modules.where((module) => module.isRunning).length;
-    final health = modules.isEmpty ? 0.0 : running / modules.length;
-    final statusColor = health == 1
+  void _drawHeader(Canvas canvas, List<_FactoryNode> nodes, Rect viewport) {
+    final running = nodes.where((node) => node.isRunning).length;
+    final statusColor = nodes.isNotEmpty && running == nodes.length
         ? const Color(0xFF10B981)
-        : health >= 0.5
-        ? const Color(0xFFF59E0B)
-        : const Color(0xFFEF4444);
-    final rect = Rect.fromLTWH(12, 8, viewport.width - 24, 30);
-    final shimmer = (sin(_time * 0.8) + 1) / 2;
+        : const Color(0xFFF59E0B);
+    final rect = Rect.fromLTWH(12, 8, viewport.width - 24, 28);
+    final shimmer = (sin(_time * 0.9) + 1) / 2;
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(7)),
@@ -89,7 +96,7 @@ class FactoryVisualizerGame extends FlameGame {
           end: Alignment(1 + shimmer, 0),
           colors: [
             const Color(0xFF121925),
-            statusColor.withValues(alpha: 0.23),
+            statusColor.withValues(alpha: 0.24),
             const Color(0xFF121925),
           ],
         ).createShader(rect),
@@ -99,9 +106,9 @@ class FactoryVisualizerGame extends FlameGame {
       Paint()
         ..shader = LinearGradient(
           colors: [
-            statusColor.withValues(alpha: 0.25),
+            statusColor.withValues(alpha: 0.3),
             statusColor,
-            statusColor.withValues(alpha: 0.25),
+            statusColor.withValues(alpha: 0.3),
           ],
         ).createShader(rect)
         ..style = PaintingStyle.stroke
@@ -110,348 +117,449 @@ class FactoryVisualizerGame extends FlameGame {
 
     _paintText(
       canvas,
-      'LIVE FACTORY TELEMETRY',
-      Offset(rect.left + 12, rect.top + 7),
+      'LIVE FACTORY TOPOLOGY',
+      Offset(rect.left + 12, rect.top + 6),
       color: const Color(0xFFF3F4F6),
-      fontSize: 11,
+      fontSize: 10.5,
       weight: FontWeight.bold,
-      letterSpacing: 1.1,
+      letterSpacing: 1,
     );
     _paintText(
       canvas,
-      modules.isEmpty
-          ? 'NO AUTOMATION ONLINE'
-          : '$running / ${modules.length} MACHINE GROUPS RUNNING',
-      Offset(rect.right - 12, rect.top + 8),
+      nodes.isEmpty
+          ? 'NO AUTOMATION'
+          : '$running/${nodes.length} GROUPS RUNNING',
+      Offset(rect.right - 12, rect.top + 7),
       color: statusColor,
-      fontSize: 9.5,
+      fontSize: 9,
       weight: FontWeight.bold,
       anchor: _TextAnchor.topRight,
     );
   }
 
-  void _drawModules(Canvas canvas, List<_MachineTelemetry> modules) {
-    if (modules.isEmpty) {
-      _drawEmptyState(canvas);
-      return;
+  Map<_FactoryNode, Rect> _layoutNodes(List<_FactoryNode> nodes) {
+    const left = 14.0;
+    const right = 14.0;
+    const top = 61.0;
+    const nodeHeight = 70.0;
+    const rowGap = 14.0;
+    const stageCount = 5;
+    final availableWidth = size.x - left - right;
+    final stageWidth = availableWidth / stageCount;
+    final nodeWidth = min(154.0, max(72.0, stageWidth - 24));
+    final positions = <_FactoryNode, Rect>{};
+
+    for (var stage = 0; stage < stageCount; stage++) {
+      final stageNodes = nodes.where((node) => node.stage == stage).toList();
+      for (var row = 0; row < stageNodes.length; row++) {
+        final centerX = left + stageWidth * stage + stageWidth / 2;
+        positions[stageNodes[row]] = Rect.fromCenter(
+          center: Offset(
+            centerX,
+            top + nodeHeight / 2 + row * (nodeHeight + rowGap),
+          ),
+          width: nodeWidth,
+          height: nodeHeight,
+        );
+      }
     }
+    return positions;
+  }
 
-    final columns = telemetryColumnsForWidth(size.x);
-    const horizontalPadding = 12.0;
-    const gap = 10.0;
-    const top = 48.0;
-    const cardHeight = 120.0;
-    final cardWidth =
-        (size.x - horizontalPadding * 2 - gap * (columns - 1)) / columns;
-
-    for (var index = 0; index < modules.length; index++) {
-      final row = index ~/ columns;
-      final column = index % columns;
-      final rect = Rect.fromLTWH(
-        horizontalPadding + column * (cardWidth + gap),
-        top + row * (cardHeight + gap),
-        cardWidth,
-        cardHeight,
+  void _drawStageLabels(Canvas canvas, Map<_FactoryNode, Rect> positions) {
+    const labels = [
+      'EXTRACTION',
+      'SMELTING',
+      'COMPONENTS',
+      'SCIENCE',
+      'LAUNCH',
+    ];
+    for (var stage = 0; stage < labels.length; stage++) {
+      final stageRects = positions.entries
+          .where((entry) => entry.key.stage == stage)
+          .map((entry) => entry.value)
+          .toList();
+      if (stageRects.isEmpty) continue;
+      _paintText(
+        canvas,
+        labels[stage],
+        Offset(stageRects.first.center.dx, 43),
+        color: const Color(0xFF64748B),
+        fontSize: 7.5,
+        weight: FontWeight.bold,
+        letterSpacing: 0.8,
+        anchor: _TextAnchor.topCenter,
       );
-      _drawTelemetryModule(canvas, rect, modules[index], index);
     }
   }
 
-  void _drawEmptyState(Canvas canvas) {
-    final center = Offset(size.x / 2, size.y / 2 + 10);
-    final pulse = 0.65 + sin(_time * 2) * 0.15;
-    canvas.drawCircle(
-      center,
-      46,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [
-            const Color(0xFFF59E0B).withValues(alpha: 0.2 * pulse),
-            Colors.transparent,
-          ],
-        ).createShader(Rect.fromCircle(center: center, radius: 46)),
-    );
-    _paintText(
-      canvas,
-      '⛏️',
-      Offset(center.dx, center.dy - 27),
-      color: Colors.white,
-      fontSize: 28,
-      anchor: _TextAnchor.topCenter,
-    );
-    _paintText(
-      canvas,
-      'BUILD A MINER TO START THE FACTORY',
-      Offset(center.dx, center.dy + 10),
-      color: const Color(0xFFF59E0B),
-      fontSize: 11,
-      weight: FontWeight.bold,
-      anchor: _TextAnchor.topCenter,
-    );
+  void _drawBelts(
+    Canvas canvas,
+    List<_FactoryNode> nodes,
+    Map<_FactoryNode, Rect> positions,
+  ) {
+    final edges = <_FactoryEdge>[];
+    for (final destination in nodes) {
+      for (final resource in destination.inputs) {
+        final sources =
+            nodes
+                .where(
+                  (source) =>
+                      source.stage < destination.stage &&
+                      source.outputs.contains(resource),
+                )
+                .toList()
+              ..sort((a, b) => b.stage.compareTo(a.stage));
+        if (sources.isNotEmpty) {
+          edges.add(
+            _FactoryEdge(
+              source: sources.first,
+              destination: destination,
+              resource: resource,
+            ),
+          );
+        }
+      }
+    }
+
+    for (var index = 0; index < edges.length; index++) {
+      final edge = edges[index];
+      final sourceRect = positions[edge.source];
+      final destinationRect = positions[edge.destination];
+      if (sourceRect == null || destinationRect == null) continue;
+      _drawBelt(canvas, sourceRect, destinationRect, edge, index);
+    }
   }
 
-  void _drawTelemetryModule(
+  void _drawBelt(
     Canvas canvas,
-    Rect rect,
-    _MachineTelemetry module,
+    Rect source,
+    Rect destination,
+    _FactoryEdge edge,
     int index,
   ) {
-    final card = RRect.fromRectAndRadius(rect, const Radius.circular(10));
-    final phase = (_time * 0.18 + index * 0.14) % 1;
-    final statusColor = module.isRunning
-        ? const Color(0xFF10B981)
-        : const Color(0xFFEF4444);
+    final start = Offset(source.right - 3, source.center.dy);
+    final end = Offset(destination.left + 3, destination.center.dy);
+    final horizontalDistance = max(24.0, end.dx - start.dx);
+    final path = Path()
+      ..moveTo(start.dx, start.dy)
+      ..cubicTo(
+        start.dx + horizontalDistance * 0.42,
+        start.dy,
+        end.dx - horizontalDistance * 0.42,
+        end.dy,
+        end.dx,
+        end.dy,
+      );
+    final resourceColor = _resourceColor(edge.resource);
+    final bounds = path.getBounds().inflate(4);
 
-    canvas.drawRRect(
-      card,
+    canvas.drawPath(
+      path,
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.4)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    canvas.drawRRect(
-      card,
-      Paint()
-        ..shader = RadialGradient(
-          center: Alignment(-0.8 + phase * 1.6, -0.4),
-          radius: 1.2,
-          colors: [
-            module.color.withValues(alpha: module.isRunning ? 0.28 : 0.12),
-            const Color(0xF2181C24),
-            const Color(0xFF10141B),
-          ],
-          stops: const [0, 0.52, 1],
-        ).createShader(rect),
-    );
-
-    final borderGlow = LinearGradient(
-      begin: Alignment(-1 + phase * 2, -1),
-      end: Alignment(1 + phase * 2, 1),
-      colors: [
-        module.color.withValues(alpha: 0.25),
-        module.color,
-        Colors.white.withValues(alpha: 0.75),
-        module.color.withValues(alpha: 0.25),
-      ],
-      stops: const [0, 0.38, 0.52, 1],
-    ).createShader(rect);
-    canvas.drawRRect(
-      card,
-      Paint()
-        ..shader = borderGlow
+        ..color = const Color(0xFF07090D)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = module.isRunning ? 1.5 : 1,
+        ..strokeWidth = 9
+        ..strokeCap = StrokeCap.round,
     );
-
-    _drawMachineIdentity(canvas, rect, module, statusColor);
-    _drawAssignment(canvas, rect, module);
-    _drawMaterialFlow(canvas, rect, module, index);
-
-    if (module.progress != null) {
-      _drawProgress(canvas, rect, module);
-    }
-  }
-
-  void _drawMachineIdentity(
-    Canvas canvas,
-    Rect rect,
-    _MachineTelemetry module,
-    Color statusColor,
-  ) {
-    _paintText(
-      canvas,
-      module.machineIcon,
-      Offset(rect.left + 11, rect.top + 9),
-      color: Colors.white,
-      fontSize: 21,
-    );
-    _paintText(
-      canvas,
-      module.machineName.toUpperCase(),
-      Offset(rect.left + 40, rect.top + 8),
-      color: const Color(0xFFF3F4F6),
-      fontSize: 10,
-      weight: FontWeight.bold,
-      maxWidth: rect.width - 145,
-    );
-    _paintText(
-      canvas,
-      'OWNED ×${module.count}',
-      Offset(rect.left + 40, rect.top + 22),
-      color: module.color,
-      fontSize: 9,
-      weight: FontWeight.bold,
-    );
-
-    final statusRect = Rect.fromLTWH(rect.right - 89, rect.top + 9, 77, 21);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(statusRect, const Radius.circular(11)),
-      Paint()..color = statusColor.withValues(alpha: 0.16),
-    );
-    canvas.drawCircle(
-      Offset(statusRect.left + 10, statusRect.center.dy),
-      3,
-      Paint()..color = statusColor,
-    );
-    _paintText(
-      canvas,
-      module.isRunning ? 'RUNNING' : module.blockedReason,
-      Offset(statusRect.left + 18, statusRect.top + 6),
-      color: statusColor,
-      fontSize: 8,
-      weight: FontWeight.bold,
-      maxWidth: statusRect.width - 22,
-    );
-  }
-
-  void _drawAssignment(Canvas canvas, Rect rect, _MachineTelemetry module) {
-    final assignmentRect = Rect.fromLTWH(
-      rect.left + 10,
-      rect.top + 38,
-      rect.width - 20,
-      37,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(assignmentRect, const Radius.circular(6)),
-      Paint()..color = const Color(0x9910141B),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(assignmentRect, const Radius.circular(6)),
+    canvas.drawPath(
+      path,
       Paint()
-        ..color = module.color.withValues(alpha: 0.35)
-        ..style = PaintingStyle.stroke,
+        ..shader = LinearGradient(
+          colors: [
+            edge.source.color.withValues(alpha: 0.35),
+            resourceColor,
+            edge.destination.color.withValues(alpha: 0.75),
+          ],
+        ).createShader(bounds)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..strokeCap = StrokeCap.round,
     );
-    _paintText(
-      canvas,
-      module.assignmentVerb,
-      Offset(assignmentRect.left + 9, assignmentRect.top + 4),
-      color: const Color(0xFF9CA3AF),
-      fontSize: 7.5,
-      weight: FontWeight.bold,
-      letterSpacing: 0.8,
-    );
-    _paintText(
-      canvas,
-      module.assignment.toUpperCase(),
-      Offset(assignmentRect.left + 9, assignmentRect.top + 15),
-      color: module.color,
-      fontSize: 12,
-      weight: FontWeight.bold,
-      maxWidth: assignmentRect.width - 18,
-    );
-  }
-
-  void _drawMaterialFlow(
-    Canvas canvas,
-    Rect rect,
-    _MachineTelemetry module,
-    int index,
-  ) {
-    final flowY = rect.top + 88;
-    final start = Offset(rect.left + 12, flowY);
-    final end = Offset(rect.right - 12, flowY);
-    final trackRect = Rect.fromLTRB(start.dx, flowY - 2, end.dx, flowY + 2);
-    final flowShader = LinearGradient(
-      colors: [
-        module.color.withValues(alpha: 0.1),
-        module.color.withValues(alpha: 0.85),
-        module.color.withValues(alpha: 0.1),
-      ],
-    ).createShader(trackRect);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(trackRect, const Radius.circular(2)),
-      Paint()..shader = flowShader,
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = resourceColor.withValues(alpha: 0.28)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 12
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
     );
 
-    if (module.isRunning) {
+    final metrics = path.computeMetrics().toList();
+    if (metrics.isEmpty) return;
+    final metric = metrics.first;
+    final active = edge.source.isRunning && edge.destination.isRunning;
+    if (active) {
       for (var packet = 0; packet < 3; packet++) {
-        final progress =
-            (_time * (0.28 + module.activitySpeed * 0.05) +
-                packet / 3 +
-                index * 0.09) %
-            1;
-        final center = Offset(start.dx + (end.dx - start.dx) * progress, flowY);
+        final progress = (_time * 0.35 + packet / 3 + index * 0.11) % 1;
+        final tangent = metric.getTangentForOffset(metric.length * progress);
+        if (tangent == null) continue;
+        final center = tangent.position;
         canvas.drawCircle(
           center,
           8,
           Paint()
             ..shader = RadialGradient(
               colors: [
-                module.color.withValues(alpha: 0.55),
+                resourceColor.withValues(alpha: 0.8),
                 Colors.transparent,
               ],
             ).createShader(Rect.fromCircle(center: center, radius: 8)),
         );
-        canvas.drawCircle(center, 2.4, Paint()..color = Colors.white);
+        canvas.drawCircle(center, 2.2, Paint()..color = Colors.white);
       }
     }
 
-    final flowLabel = '${module.inputLabel}  →  ${module.outputLabel}';
+    final midpoint = metric.getTangentForOffset(metric.length * 0.5);
+    if (midpoint != null && horizontalDistance > 54) {
+      _drawResourcePill(
+        canvas,
+        midpoint.position,
+        edge.resource,
+        resourceColor,
+      );
+    }
+  }
+
+  void _drawResourcePill(
+    Canvas canvas,
+    Offset center,
+    ResourceType resource,
+    Color color,
+  ) {
+    final painter = _textPainter(
+      resource.label,
+      color: const Color(0xFFF3F4F6),
+      fontSize: 7,
+      weight: FontWeight.bold,
+    );
+    final rect = Rect.fromCenter(
+      center: center.translate(0, -10),
+      width: painter.width + 10,
+      height: 14,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(7)),
+      Paint()..color = const Color(0xEE111827),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(7)),
+      Paint()
+        ..color = color.withValues(alpha: 0.75)
+        ..style = PaintingStyle.stroke,
+    );
+    painter.paint(
+      canvas,
+      Offset(rect.center.dx - painter.width / 2, rect.top + 2),
+    );
+  }
+
+  void _drawNodes(
+    Canvas canvas,
+    List<_FactoryNode> nodes,
+    Map<_FactoryNode, Rect> positions,
+  ) {
+    for (var index = 0; index < nodes.length; index++) {
+      final rect = positions[nodes[index]];
+      if (rect != null) {
+        _drawMachineNode(canvas, rect, nodes[index], index);
+      }
+    }
+  }
+
+  void _drawMachineNode(
+    Canvas canvas,
+    Rect rect,
+    _FactoryNode node,
+    int index,
+  ) {
+    final phase = (_time * 0.2 + index * 0.13) % 1;
+    final card = RRect.fromRectAndRadius(rect, const Radius.circular(9));
+    final statusColor = node.isRunning
+        ? const Color(0xFF10B981)
+        : const Color(0xFFEF4444);
+
+    canvas.drawRRect(
+      card,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.6)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+    canvas.drawRRect(
+      card,
+      Paint()
+        ..shader = RadialGradient(
+          center: Alignment(-0.7 + phase * 1.4, -0.6),
+          radius: 1.2,
+          colors: [
+            node.color.withValues(alpha: node.isRunning ? 0.32 : 0.14),
+            const Color(0xF2181C24),
+            const Color(0xFF0F1319),
+          ],
+          stops: const [0, 0.5, 1],
+        ).createShader(rect),
+    );
+    canvas.drawRRect(
+      card,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment(-1 + phase * 2, -1),
+          end: Alignment(1 + phase * 2, 1),
+          colors: [
+            node.color.withValues(alpha: 0.35),
+            node.color,
+            Colors.white.withValues(alpha: 0.8),
+            node.color.withValues(alpha: 0.35),
+          ],
+          stops: const [0, 0.38, 0.52, 1],
+        ).createShader(rect)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+
     _paintText(
       canvas,
-      flowLabel,
-      Offset(rect.center.dx, rect.top + 96),
-      color: const Color(0xFFD1D5DB),
+      node.machineIcon,
+      Offset(rect.left + 8, rect.top + 8),
+      color: Colors.white,
+      fontSize: 19,
+    );
+    canvas.drawCircle(
+      Offset(rect.right - 10, rect.top + 10),
+      3,
+      Paint()..color = statusColor,
+    );
+    _paintText(
+      canvas,
+      node.machineName,
+      Offset(rect.left + 34, rect.top + 7),
+      color: const Color(0xFFF3F4F6),
       fontSize: 8.5,
-      weight: FontWeight.w600,
-      maxWidth: rect.width - 20,
+      weight: FontWeight.bold,
+      maxWidth: rect.width - 52,
+    );
+    _paintText(
+      canvas,
+      '×${node.count} OWNED',
+      Offset(rect.left + 34, rect.top + 20),
+      color: node.color,
+      fontSize: 7.5,
+      weight: FontWeight.bold,
+    );
+
+    final assignmentRect = Rect.fromLTWH(
+      rect.left + 7,
+      rect.top + 35,
+      rect.width - 14,
+      27,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(assignmentRect, const Radius.circular(5)),
+      Paint()..color = const Color(0xB30D1118),
+    );
+    _paintText(
+      canvas,
+      node.assignmentVerb,
+      Offset(assignmentRect.left + 6, assignmentRect.top + 3),
+      color: const Color(0xFF94A3B8),
+      fontSize: 6,
+      weight: FontWeight.bold,
+      letterSpacing: 0.5,
+    );
+    _paintText(
+      canvas,
+      node.assignment.toUpperCase(),
+      Offset(assignmentRect.left + 6, assignmentRect.top + 12),
+      color: node.color,
+      fontSize: 8.5,
+      weight: FontWeight.bold,
+      maxWidth: assignmentRect.width - 12,
+    );
+
+    if (node.progress != null) {
+      final track = Rect.fromLTWH(
+        rect.left + 7,
+        rect.bottom - 5,
+        rect.width - 14,
+        2,
+      );
+      canvas.drawRect(track, Paint()..color = const Color(0xFF30394A));
+      final fill = Rect.fromLTWH(
+        track.left,
+        track.top,
+        track.width * node.progress!,
+        track.height,
+      );
+      canvas.drawRect(
+        fill,
+        Paint()
+          ..shader = LinearGradient(
+            colors: [node.color, Colors.white, node.color],
+          ).createShader(fill),
+      );
+    }
+  }
+
+  void _drawEmptyState(Canvas canvas) {
+    final center = Offset(size.x / 2, size.y / 2 + 8);
+    final pulse = 0.7 + sin(_time * 2) * 0.15;
+    canvas.drawCircle(
+      center,
+      44,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [
+            const Color(0xFFF59E0B).withValues(alpha: 0.25 * pulse),
+            Colors.transparent,
+          ],
+        ).createShader(Rect.fromCircle(center: center, radius: 44)),
+    );
+    _paintText(
+      canvas,
+      '⛏️  BUILD A MINER TO START THE FACTORY',
+      center,
+      color: const Color(0xFFF59E0B),
+      fontSize: 10,
+      weight: FontWeight.bold,
       anchor: _TextAnchor.topCenter,
     );
   }
 
-  void _drawProgress(Canvas canvas, Rect rect, _MachineTelemetry module) {
-    final track = Rect.fromLTWH(
-      rect.left + 11,
-      rect.bottom - 7,
-      rect.width - 22,
-      3,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(track, const Radius.circular(2)),
-      Paint()..color = const Color(0xFF30394A),
-    );
-    final fill = Rect.fromLTWH(
-      track.left,
-      track.top,
-      track.width * module.progress!,
-      track.height,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(fill, const Radius.circular(2)),
-      Paint()
-        ..shader = LinearGradient(
-          colors: [module.color, Colors.white, module.color],
-        ).createShader(fill),
-    );
-  }
-
   void _drawScanlines(Canvas canvas, Rect viewport) {
-    canvas.drawRect(
-      viewport,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.transparent, Color(0x0CFFFFFF), Colors.transparent],
-          stops: [0, 0.5, 1],
-          tileMode: TileMode.repeated,
-          transform: GradientRotation(pi / 2),
-        ).createShader(Rect.fromLTWH(0, 0, 5, 5)),
-    );
+    final paint = Paint()..color = const Color(0x0AFFFFFF);
+    for (double y = 2; y < viewport.height; y += 5) {
+      canvas.drawRect(Rect.fromLTWH(0, y, viewport.width, 1), paint);
+    }
   }
 
-  void _paintText(
-    Canvas canvas,
-    String text,
-    Offset position, {
+  Color _resourceColor(ResourceType resource) {
+    return switch (resource) {
+      ResourceType.coal => const Color(0xFF94A3B8),
+      ResourceType.ironOre => const Color(0xFFC0CAD8),
+      ResourceType.copperOre => const Color(0xFFFB923C),
+      ResourceType.stone => const Color(0xFFA8A29E),
+      ResourceType.ironPlate => const Color(0xFFE2E8F0),
+      ResourceType.copperPlate => const Color(0xFFF97316),
+      ResourceType.ironGear => const Color(0xFF7DD3FC),
+      ResourceType.copperWire => const Color(0xFFF59E0B),
+      ResourceType.electronicCircuit => const Color(0xFF22C55E),
+      ResourceType.steelPlate => const Color(0xFF60A5FA),
+      ResourceType.automationScience => const Color(0xFFEF4444),
+      ResourceType.logisticScience => const Color(0xFF10B981),
+      ResourceType.rocketPart => const Color(0xFFA855F7),
+      ResourceType.spaceScience => const Color(0xFF818CF8),
+    };
+  }
+
+  TextPainter _textPainter(
+    String text, {
     required Color color,
     required double fontSize,
     FontWeight weight = FontWeight.normal,
-    double? maxWidth,
     double letterSpacing = 0,
-    _TextAnchor anchor = _TextAnchor.topLeft,
+    double? maxWidth,
   }) {
-    final painter = TextPainter(
+    return TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
@@ -465,7 +573,27 @@ class FactoryVisualizerGame extends FlameGame {
       ellipsis: '…',
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: maxWidth ?? double.infinity);
+  }
 
+  void _paintText(
+    Canvas canvas,
+    String text,
+    Offset position, {
+    required Color color,
+    required double fontSize,
+    FontWeight weight = FontWeight.normal,
+    double? maxWidth,
+    double letterSpacing = 0,
+    _TextAnchor anchor = _TextAnchor.topLeft,
+  }) {
+    final painter = _textPainter(
+      text,
+      color: color,
+      fontSize: fontSize,
+      weight: weight,
+      maxWidth: maxWidth,
+      letterSpacing: letterSpacing,
+    );
     final offset = switch (anchor) {
       _TextAnchor.topLeft => position,
       _TextAnchor.topCenter => Offset(
@@ -480,63 +608,72 @@ class FactoryVisualizerGame extends FlameGame {
 
 enum _TextAnchor { topLeft, topCenter, topRight }
 
-class _MachineTelemetry {
-  final String machineName;
-  final String machineIcon;
+class _FactoryNode {
+  final BuildingType type;
+  final int stage;
   final int count;
   final String assignmentVerb;
   final String assignment;
-  final String inputLabel;
-  final String outputLabel;
+  final Set<ResourceType> inputs;
+  final Set<ResourceType> outputs;
   final Color color;
   final bool isRunning;
-  final String blockedReason;
-  final double activitySpeed;
   final double? progress;
 
-  const _MachineTelemetry({
-    required this.machineName,
-    required this.machineIcon,
+  const _FactoryNode({
+    required this.type,
+    required this.stage,
     required this.count,
     required this.assignmentVerb,
     required this.assignment,
-    required this.inputLabel,
-    required this.outputLabel,
+    required this.inputs,
+    required this.outputs,
     required this.color,
     required this.isRunning,
-    required this.blockedReason,
-    required this.activitySpeed,
     this.progress,
+  });
+
+  String get machineName => type.name;
+  String get machineIcon => type.icon;
+}
+
+class _FactoryEdge {
+  final _FactoryNode source;
+  final _FactoryNode destination;
+  final ResourceType resource;
+
+  const _FactoryEdge({
+    required this.source,
+    required this.destination,
+    required this.resource,
   });
 }
 
-List<_MachineTelemetry> _buildTelemetry(GameState state) {
-  final modules = <_MachineTelemetry>[];
+List<_FactoryNode> _buildFactoryNodes(GameState state) {
+  final nodes = <_FactoryNode>[];
 
   void addMiner(BuildingType type, Color color) {
     final building = state.buildings[type];
     if (building == null || building.count == 0) return;
-    final target = building.targetResource;
+    final target = building.targetResource ?? ResourceType.ironOre;
     final needsFuel = type == BuildingType.burnerMiner;
     final hasFuel = !needsFuel || (state.inventory[ResourceType.coal] ?? 0) > 0;
-    modules.add(
-      _MachineTelemetry(
-        machineName: type.name,
-        machineIcon: type.icon,
+    nodes.add(
+      _FactoryNode(
+        type: type,
+        stage: 0,
         count: building.count,
-        assignmentVerb: 'ASSIGNED DEPOSIT',
-        assignment: target?.label ?? 'Iron Ore',
-        inputLabel: needsFuel ? 'Coal fuel' : 'Grid power',
-        outputLabel: target?.label ?? 'Iron Ore',
+        assignmentVerb: 'MINING TARGET',
+        assignment: target.label,
+        inputs: needsFuel ? {ResourceType.coal} : const {},
+        outputs: {target},
         color: color,
         isRunning: hasFuel,
-        blockedReason: 'NO FUEL',
-        activitySpeed: type.craftSpeed,
       ),
     );
   }
 
-  void addRecipeMachine(BuildingType type, Color color) {
+  void addRecipeMachine(BuildingType type, int stage, Color color) {
     final building = state.buildings[type];
     if (building == null || building.count == 0) return;
     final recipe = building.activeRecipeId == null
@@ -547,25 +684,19 @@ List<_MachineTelemetry> _buildTelemetry(GameState state) {
         recipe.inputs.entries.every(
           (entry) => (state.inventory[entry.key] ?? 0) > 0,
         );
-    modules.add(
-      _MachineTelemetry(
-        machineName: type.name,
-        machineIcon: type.icon,
+    nodes.add(
+      _FactoryNode(
+        type: type,
+        stage: stage,
         count: building.count,
         assignmentVerb: type == BuildingType.rocketSilo
-            ? 'CURRENT PROJECT'
+            ? 'BUILDING'
             : 'ACTIVE RECIPE',
         assignment: recipe?.name ?? 'Unassigned',
-        inputLabel:
-            recipe?.inputs.keys.map((item) => item.label).join(' + ') ??
-            'No inputs',
-        outputLabel:
-            recipe?.outputs.keys.map((item) => item.label).join(' + ') ??
-            'No output',
+        inputs: recipe?.inputs.keys.toSet() ?? const {},
+        outputs: recipe?.outputs.keys.toSet() ?? const {},
         color: color,
         isRunning: hasInputs,
-        blockedReason: recipe == null ? 'NO RECIPE' : 'STARVED',
-        activitySpeed: type.craftSpeed,
         progress: type == BuildingType.rocketSilo
             ? (state.rocketPartsBuilt / 100).clamp(0, 1)
             : null,
@@ -575,10 +706,10 @@ List<_MachineTelemetry> _buildTelemetry(GameState state) {
 
   addMiner(BuildingType.burnerMiner, const Color(0xFFF59E0B));
   addMiner(BuildingType.electricMiner, const Color(0xFFEAB308));
-  addRecipeMachine(BuildingType.stoneFurnace, const Color(0xFFF97316));
-  addRecipeMachine(BuildingType.steelFurnace, const Color(0xFFEF4444));
-  addRecipeMachine(BuildingType.assembler1, const Color(0xFF38BDF8));
-  addRecipeMachine(BuildingType.assembler2, const Color(0xFF3B82F6));
+  addRecipeMachine(BuildingType.stoneFurnace, 1, const Color(0xFFF97316));
+  addRecipeMachine(BuildingType.steelFurnace, 1, const Color(0xFFEF4444));
+  addRecipeMachine(BuildingType.assembler1, 2, const Color(0xFF38BDF8));
+  addRecipeMachine(BuildingType.assembler2, 3, const Color(0xFF3B82F6));
 
   final lab = state.buildings[BuildingType.researchLab];
   if (lab != null && lab.count > 0) {
@@ -590,33 +721,23 @@ List<_MachineTelemetry> _buildTelemetry(GameState state) {
         technology.cost.entries.every(
           (entry) => (state.inventory[entry.key] ?? 0) > 0,
         );
-    modules.add(
-      _MachineTelemetry(
-        machineName: BuildingType.researchLab.name,
-        machineIcon: BuildingType.researchLab.icon,
+    nodes.add(
+      _FactoryNode(
+        type: BuildingType.researchLab,
+        stage: 3,
         count: lab.count,
         assignmentVerb: 'RESEARCHING',
         assignment: technology?.name ?? 'Nothing selected',
-        inputLabel:
-            technology?.cost.keys.map((item) => item.label).join(' + ') ??
-            'Science packs',
-        outputLabel: technology?.name ?? 'Technology',
+        inputs: technology?.cost.keys.toSet() ?? const {},
+        outputs: const {},
         color: const Color(0xFF10B981),
         isRunning: hasPacks,
-        blockedReason: technology == null ? 'IDLE' : 'NO PACKS',
-        activitySpeed: 1,
       ),
     );
   }
 
-  addRecipeMachine(BuildingType.rocketSilo, const Color(0xFFA855F7));
-  return modules;
-}
-
-int telemetryColumnsForWidth(double width) {
-  if (width >= 980) return 3;
-  if (width >= 620) return 2;
-  return 1;
+  addRecipeMachine(BuildingType.rocketSilo, 4, const Color(0xFFA855F7));
+  return nodes;
 }
 
 class FlameFactoryWidget extends StatefulWidget {
@@ -645,31 +766,27 @@ class _FlameFactoryWidgetState extends State<FlameFactoryWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final moduleCount = max(1, _buildTelemetry(widget.state).length);
-        final columns = telemetryColumnsForWidth(constraints.maxWidth);
-        final rows = (moduleCount / columns).ceil();
-        final height = 48 + rows * 130 + 8;
+    final nodes = _buildFactoryNodes(widget.state);
+    final maxRows = nodes.isEmpty
+        ? 1
+        : List.generate(
+            5,
+            (stage) => nodes.where((node) => node.stage == stage).length,
+          ).reduce(max);
+    final height = nodes.isEmpty ? 168.0 : (61 + maxRows * 84 + 10).toDouble();
 
-        return Container(
-          height: height.toDouble(),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0E1116),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFF2D3545)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x5506B6D4),
-                blurRadius: 12,
-                spreadRadius: -7,
-              ),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: GameWidget(game: _game),
-        );
-      },
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E1116),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF2D3545)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x5506B6D4), blurRadius: 12, spreadRadius: -7),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: GameWidget(game: _game),
     );
   }
 }
