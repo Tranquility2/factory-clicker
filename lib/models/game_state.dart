@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'resource_type.dart';
 import 'building.dart';
 import 'recipe.dart';
@@ -7,10 +9,7 @@ class ManualCraftItem {
   final Recipe recipe;
   double progressTicks;
 
-  ManualCraftItem({
-    required this.recipe,
-    this.progressTicks = 0.0,
-  });
+  ManualCraftItem({required this.recipe, this.progressTicks = 0.0});
 
   Map<String, dynamic> toJson() => {
     'recipeId': recipe.id,
@@ -18,7 +17,8 @@ class ManualCraftItem {
   };
 
   factory ManualCraftItem.fromJson(Map<String, dynamic> json) {
-    final recipe = Recipe.getById(json['recipeId'] as String) ?? Recipe.all.first;
+    final recipe =
+        Recipe.getById(json['recipeId'] as String) ?? Recipe.all.first;
     return ManualCraftItem(
       recipe: recipe,
       progressTicks: (json['progressTicks'] as num?)?.toDouble() ?? 0.0,
@@ -53,11 +53,12 @@ class GameState {
     this.totalManualClicks = 0,
     this.gameSpeedMultiplier = 1.0,
     int? lastSaveTimestamp,
-  })  : inventory = inventory ?? _initialInventory(),
-        buildings = buildings ?? _initialBuildings(),
-        unlockedTechIds = unlockedTechIds ?? <String>{},
-        manualCraftQueue = manualCraftQueue ?? <ManualCraftItem>[],
-        lastSaveTimestamp = lastSaveTimestamp ?? DateTime.now().millisecondsSinceEpoch;
+  }) : inventory = inventory ?? _initialInventory(),
+       buildings = buildings ?? _initialBuildings(),
+       unlockedTechIds = unlockedTechIds ?? <String>{},
+       manualCraftQueue = manualCraftQueue ?? <ManualCraftItem>[],
+       lastSaveTimestamp =
+           lastSaveTimestamp ?? DateTime.now().millisecondsSinceEpoch;
 
   static Map<ResourceType, double> _initialInventory() {
     final map = <ResourceType, double>{};
@@ -142,29 +143,45 @@ class GameState {
       blds.addAll(_initialBuildings());
     }
 
-    final unlocked = (json['unlockedTechIds'] as List<dynamic>?)
+    final unlocked =
+        (json['unlockedTechIds'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toSet() ??
         <String>{};
 
-    final queue = (json['manualCraftQueue'] as List<dynamic>?)
+    final queue =
+        (json['manualCraftQueue'] as List<dynamic>?)
             ?.map((e) => ManualCraftItem.fromJson(e as Map<String, dynamic>))
             .toList() ??
         <ManualCraftItem>[];
+    final savedRocketParts = json['rocketPartsBuilt'] as int? ?? 0;
+    final inventoryRocketParts = inv[ResourceType.rocketPart] ?? 0;
+    final rocketPartsBuilt = min(
+      100,
+      max(savedRocketParts, inventoryRocketParts.floor()),
+    );
+    inv[ResourceType.rocketPart] = max(
+      inventoryRocketParts,
+      rocketPartsBuilt.toDouble(),
+    ).clamp(0, 100);
 
     return GameState(
       inventory: inv,
       buildings: blds,
       unlockedTechIds: unlocked,
       activeResearchId: json['activeResearchId'] as String?,
-      researchProgressTicks: (json['researchProgressTicks'] as num?)?.toDouble() ?? 0.0,
+      researchProgressTicks:
+          (json['researchProgressTicks'] as num?)?.toDouble() ?? 0.0,
       manualCraftQueue: queue,
-      rocketPartsBuilt: json['rocketPartsBuilt'] as int? ?? 0,
+      rocketPartsBuilt: rocketPartsBuilt,
       totalRocketLaunches: json['totalRocketLaunches'] as int? ?? 0,
       spaceScienceCount: json['spaceScienceCount'] as int? ?? 0,
       totalManualClicks: json['totalManualClicks'] as int? ?? 0,
-      gameSpeedMultiplier: (json['gameSpeedMultiplier'] as num?)?.toDouble() ?? 1.0,
-      lastSaveTimestamp: json['lastSaveTimestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch,
+      gameSpeedMultiplier:
+          (json['gameSpeedMultiplier'] as num?)?.toDouble() ?? 1.0,
+      lastSaveTimestamp:
+          json['lastSaveTimestamp'] as int? ??
+          DateTime.now().millisecondsSinceEpoch,
     );
   }
 }

@@ -62,11 +62,156 @@ test.describe('Factory Clicker E2E Integration Suite', () => {
     const after = JSON.parse(afterRaw);
     expect(after.buildings.burner_miner.count).toBe(1);
     expect(after.buildings.burner_miner.targetResource).toBe('ironOre');
+    expect(after.buildings.burner_miner.miningAllocations.ironOre).toBe(1);
     expect(after.inventory.ironOre).toBeGreaterThan(before.inventory.ironOre);
     expect(after.inventory.coal).toBeLessThan(before.inventory.coal);
   });
 
-  test('4. Full tech tree unlock and state persistence', async ({ page }) => {
+  test('4. Split Coal and Iron allocations sustain iron smelting', async ({ page }) => {
+    await page.waitForTimeout(750);
+    const ironChain = {
+      inventory: {
+        coal: 100,
+        ironOre: 100,
+        stone: 10,
+        ironPlate: 0
+      },
+      buildings: {
+        burner_miner: {
+          type: 'burner_miner',
+          count: 2,
+          targetResource: 'ironOre',
+          miningAllocations: { ironOre: 2 }
+        },
+        stone_furnace: {
+          type: 'stone_furnace',
+          count: 1,
+          activeRecipeId: 'smelt_iron',
+          recipeAllocations: { smelt_iron: 1 }
+        }
+      },
+      unlockedTechIds: [],
+      gameSpeedMultiplier: 1,
+      lastSaveTimestamp: Date.now()
+    };
+    await page.evaluate((state) => {
+      window['__gameDebug'].loadState(JSON.stringify(state));
+      const enableAccessibility = document.querySelector(
+        'flt-semantics-placeholder'
+      );
+      if (enableAccessibility) enableAccessibility.click();
+    }, ironChain);
+    await page.getByRole('button', {
+      name: 'Remove one from Burner Mining Drill Iron Ore'
+    }).click();
+    await page.getByRole('button', {
+      name: 'Assign one to Burner Mining Drill Coal'
+    }).click();
+    const beforeRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const before = JSON.parse(beforeRaw);
+    expect(before.buildings.burner_miner.miningAllocations.coal).toBe(1);
+    expect(before.buildings.burner_miner.miningAllocations.ironOre).toBe(1);
+    await page.waitForTimeout(1200);
+    const afterRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const after = JSON.parse(afterRaw);
+
+    expect(after.inventory.ironOre).toBeLessThan(before.inventory.ironOre);
+    expect(after.inventory.ironPlate).toBeGreaterThan(0);
+    expect(after.inventory.coal).toBeLessThan(before.inventory.coal);
+
+    await page.getByText('SETTINGS').first().click();
+    await page.getByRole('button', { name: 'SAVE GAME' }).click();
+    await page.reload();
+    await page.waitForFunction(
+      () => typeof window['__gameDebug'] !== 'undefined'
+    );
+    await page.waitForTimeout(750);
+    const persistedRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const persisted = JSON.parse(persistedRaw);
+    expect(persisted.buildings.burner_miner.miningAllocations.coal).toBe(1);
+    expect(persisted.buildings.burner_miner.miningAllocations.ironOre).toBe(1);
+  });
+
+  test('5. Starved iron smelter reports its missing Coal input', async ({ page }) => {
+    await page.waitForTimeout(750);
+    await page.evaluate((state) => {
+      window['__gameDebug'].loadState(JSON.stringify(state));
+      const enableAccessibility = document.querySelector(
+        'flt-semantics-placeholder'
+      );
+      if (enableAccessibility) enableAccessibility.click();
+    }, {
+      inventory: { coal: 0, ironOre: 100, stone: 10 },
+      buildings: {
+        stone_furnace: {
+          type: 'stone_furnace',
+          count: 1,
+          activeRecipeId: 'smelt_iron'
+        }
+      },
+      unlockedTechIds: [],
+      lastSaveTimestamp: Date.now()
+    });
+
+    await expect(
+      page.getByLabel(/STOPPED — Missing Coal/)
+    ).toBeVisible();
+  });
+
+  test('6. Rocket silo accumulates fractional production into whole parts', async ({ page }) => {
+    await page.waitForTimeout(750);
+    await page.evaluate((state) => {
+      window['__gameDebug'].loadState(JSON.stringify(state));
+    }, {
+      inventory: {
+        coal: 1000,
+        steelPlate: 1000,
+        electronicCircuit: 1000,
+        ironGear: 1000,
+        rocketPart: 0
+      },
+      buildings: {
+        rocket_silo: {
+          type: 'rocket_silo',
+          count: 1,
+          activeRecipeId: 'craft_rocket_part',
+          recipeAllocations: { craft_rocket_part: 1 }
+        }
+      },
+      unlockedTechIds: ['rocketry'],
+      rocketPartsBuilt: 0,
+      gameSpeedMultiplier: 20,
+      lastSaveTimestamp: Date.now()
+    });
+    await page.waitForTimeout(1200);
+    const rawState = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const state = JSON.parse(rawState);
+    expect(state.inventory.rocketPart).toBeGreaterThan(0);
+    expect(state.rocketPartsBuilt).toBeGreaterThan(0);
+
+    await page.evaluate((savedState) => {
+      window['__gameDebug'].loadState(JSON.stringify(savedState));
+    }, {
+      inventory: { rocketPart: 100 },
+      buildings: {},
+      unlockedTechIds: ['rocketry'],
+      lastSaveTimestamp: Date.now()
+    });
+    const migratedRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    expect(JSON.parse(migratedRaw).rocketPartsBuilt).toBe(100);
+  });
+
+  test('7. Full tech tree unlock and state persistence', async ({ page }) => {
     // Unlock all technologies
     await page.evaluate(() => window['__gameDebug'].unlockAllTech());
 
@@ -79,7 +224,7 @@ test.describe('Factory Clicker E2E Integration Suite', () => {
     expect(state.unlockedTechIds).toContain('rocketry');
   });
 
-  test('5. Reset Save clears persisted progress', async ({ page }) => {
+  test('8. Reset Save clears persisted progress', async ({ page }) => {
     await page.waitForTimeout(750);
     await page.evaluate(() => {
       const enableAccessibility = document.querySelector(
@@ -114,7 +259,7 @@ test.describe('Factory Clicker E2E Integration Suite', () => {
     expect(state.unlockedTechIds).toEqual([]);
   });
 
-  test('6. End-to-end automation simulation and rocket launch prestige', async ({ page }) => {
+  test('9. End-to-end automation simulation and rocket launch prestige', async ({ page }) => {
     // Accelerate simulation
     await page.evaluate(() => window['__gameDebug'].setSpeed(20));
     await page.evaluate(() => window['__gameDebug'].unlockAllTech());

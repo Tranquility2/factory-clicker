@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/resource_type.dart';
 import '../models/building.dart';
 import '../models/recipe.dart';
@@ -61,6 +64,7 @@ class GameEngine extends ChangeNotifier {
     _processMiners(tickMultiplier);
     _processSmelters(tickMultiplier);
     _processAssemblers(tickMultiplier);
+    _syncRocketParts();
     _processResearch(tickMultiplier);
 
     _ticksSinceLastSave++;
@@ -133,100 +137,123 @@ class GameEngine extends ChangeNotifier {
   }
 
   void _processMiners(double multiplier) {
-    // Burner Miner
-    final burner = state.buildings[BuildingType.burnerMiner];
-    if (burner != null && burner.count > 0) {
-      final target = burner.targetResource ?? ResourceType.ironOre;
-      burner.targetResource = target;
+    for (final type in [BuildingType.burnerMiner, BuildingType.electricMiner]) {
+      final building = state.buildings[type];
+      if (building == null || building.count == 0) continue;
+      final allocations = building.miningAllocations.entries
+          .where((entry) => entry.value > 0)
+          .toList();
+      if (allocations.isEmpty) continue;
 
-      // Burner drills produce at their declared craft speed and consume
-      // 0.1 coal per second per drill.
-      final coalConsumed = 0.1 * burner.count * multiplier / ticksPerSecond;
-      if (_consumeResource(ResourceType.coal, coalConsumed)) {
-        final produced =
-            burner.type.craftSpeed * burner.count * multiplier / ticksPerSecond;
-        _addResource(target, produced);
+      var activityRatio = 1.0;
+      if (type == BuildingType.burnerMiner) {
+        final allocatedMiners = allocations.fold<int>(
+          0,
+          (total, entry) => total + entry.value,
+        );
+        final fuelNeeded = 0.1 * allocatedMiners * multiplier / ticksPerSecond;
+        final availableFuel = state.inventory[ResourceType.coal] ?? 0.0;
+        if (fuelNeeded <= 0 || availableFuel <= 0) continue;
+        activityRatio = min(1.0, availableFuel / fuelNeeded);
+        _consumeResource(ResourceType.coal, fuelNeeded * activityRatio);
       }
-    }
 
-    // Electric Miner
-    final electric = state.buildings[BuildingType.electricMiner];
-    if (electric != null && electric.count > 0) {
-      final target = electric.targetResource ?? ResourceType.ironOre;
-      electric.targetResource = target;
-      final produced =
-          electric.type.craftSpeed *
-          electric.count *
-          multiplier /
-          ticksPerSecond;
-      _addResource(target, produced);
+      for (final allocation in allocations) {
+        final produced =
+            type.craftSpeed *
+            allocation.value *
+            multiplier *
+            activityRatio /
+            ticksPerSecond;
+        _addResource(allocation.key, produced);
+      }
     }
   }
 
   void _processSmelters(double multiplier) {
     for (final type in [BuildingType.stoneFurnace, BuildingType.steelFurnace]) {
-      final bld = state.buildings[type];
-      if (bld == null || bld.count == 0 || bld.activeRecipeId == null) continue;
-
-      final recipe = Recipe.getById(bld.activeRecipeId!);
-      if (recipe == null) continue;
-
-      // Check fuel and recipe inputs
-      final baseProgressRate = (1.0 / recipe.durationTicks) * bld.type.craftSpeed * multiplier;
-      final stepFactor = baseProgressRate * bld.count;
-
-      bool hasIngredients = true;
-      for (final entry in recipe.inputs.entries) {
-        if ((state.inventory[entry.key] ?? 0.0) < entry.value * stepFactor) {
-          hasIngredients = false;
-          break;
-        }
-      }
-
-      if (hasIngredients) {
-        for (final entry in recipe.inputs.entries) {
-          _consumeResource(entry.key, entry.value * stepFactor);
-        }
-        for (final entry in recipe.outputs.entries) {
-          _addResource(entry.key, entry.value * stepFactor);
+      final building = state.buildings[type];
+      if (building == null || building.count == 0) continue;
+      for (final allocation in building.recipeAllocations.entries) {
+        if (allocation.value <= 0) continue;
+        final recipe = Recipe.getById(allocation.key);
+        if (recipe != null) {
+          _processRecipe(
+            recipe: recipe,
+            type: type,
+            machineCount: allocation.value,
+            multiplier: multiplier,
+          );
         }
       }
     }
   }
 
   void _processAssemblers(double multiplier) {
-    for (final type in [BuildingType.assembler1, BuildingType.assembler2, BuildingType.rocketSilo]) {
-      final bld = state.buildings[type];
-      if (bld == null || bld.count == 0 || bld.activeRecipeId == null) continue;
-
-      final recipe = Recipe.getById(bld.activeRecipeId!);
-      if (recipe == null) continue;
-
-      final baseProgressRate = (1.0 / recipe.durationTicks) * bld.type.craftSpeed * multiplier;
-      final stepFactor = baseProgressRate * bld.count;
-
-      bool hasIngredients = true;
-      for (final entry in recipe.inputs.entries) {
-        if ((state.inventory[entry.key] ?? 0.0) < entry.value * stepFactor) {
-          hasIngredients = false;
-          break;
-        }
+    for (final type in [
+      BuildingType.assembler1,
+      BuildingType.assembler2,
+      BuildingType.rocketSilo,
+    ]) {
+      final building = state.buildings[type];
+      if (building == null || building.count == 0) continue;
+      if (type == BuildingType.rocketSilo && state.rocketPartsBuilt >= 100) {
+        continue;
       }
-
-      if (hasIngredients) {
-        for (final entry in recipe.inputs.entries) {
-          _consumeResource(entry.key, entry.value * stepFactor);
-        }
-        for (final entry in recipe.outputs.entries) {
-          if (entry.key == ResourceType.rocketPart) {
-            state.rocketPartsBuilt += (entry.value * stepFactor).round();
-            if (state.rocketPartsBuilt > 100) state.rocketPartsBuilt = 100;
-          } else {
-            _addResource(entry.key, entry.value * stepFactor);
-          }
+      for (final allocation in building.recipeAllocations.entries) {
+        if (allocation.value <= 0) continue;
+        final recipe = Recipe.getById(allocation.key);
+        if (recipe != null) {
+          _processRecipe(
+            recipe: recipe,
+            type: type,
+            machineCount: allocation.value,
+            multiplier: multiplier,
+          );
         }
       }
     }
+  }
+
+  void _processRecipe({
+    required Recipe recipe,
+    required BuildingType type,
+    required int machineCount,
+    required double multiplier,
+  }) {
+    var stepFactor =
+        (1.0 / recipe.durationTicks) *
+        type.craftSpeed *
+        machineCount *
+        multiplier;
+    final rocketOutput = recipe.outputs[ResourceType.rocketPart];
+    if (rocketOutput != null) {
+      final currentParts = state.inventory[ResourceType.rocketPart] ?? 0;
+      final headroom = max(0.0, 100 - currentParts);
+      if (headroom == 0) return;
+      stepFactor = min(stepFactor, headroom / rocketOutput);
+    }
+    final hasIngredients = recipe.inputs.entries.every(
+      (entry) =>
+          (state.inventory[entry.key] ?? 0.0) >= entry.value * stepFactor,
+    );
+    if (!hasIngredients) return;
+
+    for (final entry in recipe.inputs.entries) {
+      _consumeResource(entry.key, entry.value * stepFactor);
+    }
+    for (final entry in recipe.outputs.entries) {
+      _addResource(entry.key, entry.value * stepFactor);
+    }
+  }
+
+  void _syncRocketParts() {
+    final parts = (state.inventory[ResourceType.rocketPart] ?? 0).clamp(
+      0.0,
+      100.0,
+    );
+    state.inventory[ResourceType.rocketPart] = parts;
+    state.rocketPartsBuilt = parts.floor();
   }
 
   void _processResearch(double multiplier) {
@@ -236,7 +263,8 @@ class GameEngine extends ChangeNotifier {
     final tech = Technology.getById(state.activeResearchId!);
     if (tech == null) return;
 
-    final progressRate = (1.0 / tech.researchDurationTicks) * lab.count * multiplier;
+    final progressRate =
+        (1.0 / tech.researchDurationTicks) * lab.count * multiplier;
 
     bool hasPacks = true;
     for (final entry in tech.cost.entries) {
@@ -281,30 +309,100 @@ class GameEngine extends ChangeNotifier {
       _consumeResource(entry.key, entry.value.toDouble());
     }
 
-    state.buildings[type]?.count++;
-    // Default assignment if unset
-    if (type.category == BuildingCategory.mining && state.buildings[type]?.targetResource == null) {
-      state.buildings[type]?.targetResource = ResourceType.ironOre;
-    } else if (type.category == BuildingCategory.smelting && state.buildings[type]?.activeRecipeId == null) {
-      state.buildings[type]?.activeRecipeId = 'smelt_iron';
-    } else if (type.category == BuildingCategory.assembling && state.buildings[type]?.activeRecipeId == null) {
-      state.buildings[type]?.activeRecipeId = 'craft_copper_wire';
-    } else if (type == BuildingType.rocketSilo) {
-      state.buildings[type]?.activeRecipeId = 'craft_rocket_part';
-    }
+    final building = state.buildings[type]!;
+    building.count++;
+    _allocatePurchasedBuilding(building);
 
     notifyListeners();
     return true;
   }
 
-  void setBuildingRecipe(BuildingType type, String recipeId) {
-    state.buildings[type]?.activeRecipeId = recipeId;
-    notifyListeners();
+  void _allocatePurchasedBuilding(BuildingState building) {
+    final type = building.type;
+    if (type.category == BuildingCategory.mining) {
+      final target = building.targetResource ?? ResourceType.ironOre;
+      building.targetResource = target;
+      building.miningAllocations.update(
+        target,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+      return;
+    }
+
+    String? recipeId = building.activeRecipeId;
+    if (type.category == BuildingCategory.smelting) {
+      recipeId ??= 'smelt_iron';
+    } else if (type.category == BuildingCategory.assembling) {
+      recipeId ??= 'craft_copper_wire';
+    } else if (type == BuildingType.rocketSilo) {
+      recipeId = 'craft_rocket_part';
+    }
+    if (recipeId != null) {
+      building.activeRecipeId = recipeId;
+      building.recipeAllocations.update(
+        recipeId,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
   }
 
-  void setMinerTarget(BuildingType type, ResourceType resource) {
-    state.buildings[type]?.targetResource = resource;
+  bool adjustMinerAllocation(
+    BuildingType type,
+    ResourceType resource,
+    int delta,
+  ) {
+    final building = state.buildings[type];
+    if (building == null || type.category != BuildingCategory.mining) {
+      return false;
+    }
+    final current = building.miningAllocations[resource] ?? 0;
+    if (delta > 0 && building.allocatedCount >= building.count) return false;
+    if (delta < 0 && current <= 0) return false;
+
+    final updated = current + delta;
+    if (updated <= 0) {
+      building.miningAllocations.remove(resource);
+    } else {
+      building.miningAllocations[resource] = updated;
+      building.targetResource = resource;
+    }
     notifyListeners();
+    return true;
+  }
+
+  bool adjustRecipeAllocation(BuildingType type, String recipeId, int delta) {
+    final building = state.buildings[type];
+    final recipe = Recipe.getById(recipeId);
+    if (building == null || recipe == null) return false;
+    if (!state.isRecipeUnlocked(recipe) ||
+        !_buildingSupportsRecipe(type, recipe)) {
+      return false;
+    }
+    if (delta > 0 && building.allocatedCount >= building.count) return false;
+    final current = building.recipeAllocations[recipeId] ?? 0;
+    if (delta < 0 && current <= 0) return false;
+
+    final updated = current + delta;
+    if (updated <= 0) {
+      building.recipeAllocations.remove(recipeId);
+    } else {
+      building.recipeAllocations[recipeId] = updated;
+      building.activeRecipeId = recipeId;
+    }
+    notifyListeners();
+    return true;
+  }
+
+  bool _buildingSupportsRecipe(BuildingType type, Recipe recipe) {
+    return switch (type.category) {
+      BuildingCategory.smelting => recipe.category == CraftingCategory.smelting,
+      BuildingCategory.assembling =>
+        recipe.category == CraftingCategory.assembling,
+      BuildingCategory.rocketSilo => recipe.category == CraftingCategory.silo,
+      _ => false,
+    };
   }
 
   bool startResearch(String techId) {
@@ -395,7 +493,10 @@ class GameEngine extends ChangeNotifier {
 
         // Offline catchup (capped to 8 hours = 28800 seconds)
         final now = DateTime.now().millisecondsSinceEpoch;
-        final elapsedSeconds = ((now - state.lastSaveTimestamp) / 1000).clamp(0, 28800);
+        final elapsedSeconds = ((now - state.lastSaveTimestamp) / 1000).clamp(
+          0,
+          28800,
+        );
         if (elapsedSeconds > 5) {
           final catchupTicks = (elapsedSeconds * ticksPerSecond).toInt();
           // Simulate in large chunks
@@ -403,6 +504,7 @@ class GameEngine extends ChangeNotifier {
           _processMiners(chunkMultiplier);
           _processSmelters(chunkMultiplier);
           _processAssemblers(chunkMultiplier);
+          _syncRocketParts();
         }
 
         notifyListeners();

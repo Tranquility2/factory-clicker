@@ -1,12 +1,9 @@
+import 'dart:math';
+
+import 'recipe.dart';
 import 'resource_type.dart';
 
-enum BuildingCategory {
-  mining,
-  smelting,
-  assembling,
-  researchLab,
-  rocketSilo;
-}
+enum BuildingCategory { mining, smelting, assembling, researchLab, rocketSilo }
 
 enum BuildingType {
   burnerMiner(
@@ -24,7 +21,11 @@ enum BuildingType {
     name: 'Electric Mining Drill',
     description: 'High-speed automated mining drill.',
     category: BuildingCategory.mining,
-    baseCost: {ResourceType.ironPlate: 15, ResourceType.ironGear: 5, ResourceType.electronicCircuit: 3},
+    baseCost: {
+      ResourceType.ironPlate: 15,
+      ResourceType.ironGear: 5,
+      ResourceType.electronicCircuit: 3,
+    },
     costMultiplier: 1.2,
     craftSpeed: 1.5,
     icon: '⚡',
@@ -54,7 +55,11 @@ enum BuildingType {
     name: 'Assembling Machine 1',
     description: 'Automates component crafting recipes.',
     category: BuildingCategory.assembling,
-    baseCost: {ResourceType.ironPlate: 10, ResourceType.ironGear: 5, ResourceType.electronicCircuit: 3},
+    baseCost: {
+      ResourceType.ironPlate: 10,
+      ResourceType.ironGear: 5,
+      ResourceType.electronicCircuit: 3,
+    },
     costMultiplier: 1.18,
     craftSpeed: 0.75,
     icon: '🛠️',
@@ -64,7 +69,11 @@ enum BuildingType {
     name: 'Assembling Machine 2',
     description: 'Advanced fast automated manufacturing.',
     category: BuildingCategory.assembling,
-    baseCost: {ResourceType.steelPlate: 10, ResourceType.ironGear: 10, ResourceType.electronicCircuit: 10},
+    baseCost: {
+      ResourceType.steelPlate: 10,
+      ResourceType.ironGear: 10,
+      ResourceType.electronicCircuit: 10,
+    },
     costMultiplier: 1.25,
     craftSpeed: 1.5,
     icon: '⚙️',
@@ -74,7 +83,11 @@ enum BuildingType {
     name: 'Research Lab',
     description: 'Consumes science packs to unlock new technologies.',
     category: BuildingCategory.researchLab,
-    baseCost: {ResourceType.ironPlate: 10, ResourceType.ironGear: 10, ResourceType.electronicCircuit: 5},
+    baseCost: {
+      ResourceType.ironPlate: 10,
+      ResourceType.ironGear: 10,
+      ResourceType.electronicCircuit: 5,
+    },
     costMultiplier: 1.25,
     craftSpeed: 1.0,
     icon: '🔬',
@@ -82,9 +95,14 @@ enum BuildingType {
   rocketSilo(
     id: 'rocket_silo',
     name: 'Rocket Silo',
-    description: 'Builds and launches orbital rockets for prestige Space Science.',
+    description:
+        'Builds and launches orbital rockets for prestige Space Science.',
     category: BuildingCategory.rocketSilo,
-    baseCost: {ResourceType.steelPlate: 200, ResourceType.electronicCircuit: 200, ResourceType.stone: 500},
+    baseCost: {
+      ResourceType.steelPlate: 200,
+      ResourceType.electronicCircuit: 200,
+      ResourceType.stone: 500,
+    },
     costMultiplier: 2.0,
     craftSpeed: 1.0,
     icon: '🚀',
@@ -113,11 +131,17 @@ enum BuildingType {
   String get key => toString().split('.').last;
 
   Map<ResourceType, int> costForCount(int currentCount) {
-    final factor = currentCount > 0 ? (costMultiplier == 1.0 ? 1.0 : (costMultiplier * currentCount)) : 1.0;
-    
+    final factor = currentCount > 0
+        ? (costMultiplier == 1.0 ? 1.0 : (costMultiplier * currentCount))
+        : 1.0;
+
     return baseCost.map((resource, baseAmount) {
-      final calculated = (baseAmount * (currentCount == 0 ? 1.0 : (factor * 1.1))).round();
-      return MapEntry(resource, calculated < baseAmount ? baseAmount : calculated);
+      final calculated =
+          (baseAmount * (currentCount == 0 ? 1.0 : (factor * 1.1))).round();
+      return MapEntry(
+        resource,
+        calculated < baseAmount ? baseAmount : calculated,
+      );
     });
   }
 }
@@ -127,6 +151,8 @@ class BuildingState {
   int count;
   String? activeRecipeId;
   ResourceType? targetResource; // For miners: coal, ironOre, copperOre, stone
+  final Map<ResourceType, int> miningAllocations;
+  final Map<String, int> recipeAllocations;
   double currentProgressTicks;
 
   BuildingState({
@@ -134,14 +160,66 @@ class BuildingState {
     this.count = 0,
     this.activeRecipeId,
     ResourceType? targetResource,
+    Map<ResourceType, int>? miningAllocations,
+    Map<String, int>? recipeAllocations,
     this.currentProgressTicks = 0.0,
-  }) : targetResource = targetResource ?? (type.category == BuildingCategory.mining ? ResourceType.ironOre : null);
+  }) : targetResource =
+           targetResource ??
+           (type.category == BuildingCategory.mining
+               ? ResourceType.ironOre
+               : null),
+       miningAllocations = miningAllocations ?? <ResourceType, int>{},
+       recipeAllocations = recipeAllocations ?? <String, int>{} {
+    if (miningAllocations == null &&
+        type.category == BuildingCategory.mining &&
+        count > 0) {
+      this.miningAllocations[this.targetResource ?? ResourceType.ironOre] =
+          count;
+    }
+    if (recipeAllocations == null &&
+        (type.category == BuildingCategory.smelting ||
+            type.category == BuildingCategory.assembling ||
+            type.category == BuildingCategory.rocketSilo) &&
+        activeRecipeId != null &&
+        count > 0) {
+      this.recipeAllocations[activeRecipeId!] = count;
+    }
+    _normalizeAllocations(this.miningAllocations);
+    _normalizeAllocations(this.recipeAllocations);
+  }
+
+  void _normalizeAllocations<K>(Map<K, int> allocations) {
+    var remaining = max(0, count);
+    for (final key in allocations.keys.toList()) {
+      final allocation = allocations[key] ?? 0;
+      if (allocation <= 0 || remaining == 0) {
+        allocations.remove(key);
+        continue;
+      }
+      final normalized = min(allocation, remaining);
+      allocations[key] = normalized;
+      remaining -= normalized;
+    }
+  }
+
+  int get allocatedCount {
+    if (type.category == BuildingCategory.mining) {
+      return miningAllocations.values.fold(0, (total, value) => total + value);
+    }
+    return recipeAllocations.values.fold(0, (total, value) => total + value);
+  }
+
+  int get unassignedCount => max(0, count - allocatedCount);
 
   Map<String, dynamic> toJson() => {
     'type': type.id,
     'count': count,
     'activeRecipeId': activeRecipeId,
     'targetResource': targetResource?.name,
+    'miningAllocations': miningAllocations.map(
+      (resource, allocation) => MapEntry(resource.name, allocation),
+    ),
+    'recipeAllocations': recipeAllocations,
     'currentProgressTicks': currentProgressTicks,
   };
 
@@ -154,6 +232,34 @@ class BuildingState {
           building.name == rawType,
       orElse: () => BuildingType.burnerMiner,
     );
+    final rawMiningAllocations =
+        json['miningAllocations'] as Map<String, dynamic>?;
+    final miningAllocations = rawMiningAllocations == null
+        ? null
+        : <ResourceType, int>{};
+    if (rawMiningAllocations != null) {
+      for (final entry in rawMiningAllocations.entries) {
+        final matchingResources = ResourceType.values.where(
+          (resource) => resource.name == entry.key,
+        );
+        if (matchingResources.isNotEmpty && entry.value is num) {
+          miningAllocations![matchingResources.first] = (entry.value as num)
+              .toInt();
+        }
+      }
+    }
+    final rawRecipeAllocations =
+        json['recipeAllocations'] as Map<String, dynamic>?;
+    final recipeAllocations = rawRecipeAllocations == null
+        ? null
+        : <String, int>{};
+    if (rawRecipeAllocations != null) {
+      for (final entry in rawRecipeAllocations.entries) {
+        if (Recipe.getById(entry.key) != null && entry.value is num) {
+          recipeAllocations![entry.key] = (entry.value as num).toInt();
+        }
+      }
+    }
     return BuildingState(
       type: type,
       count: json['count'] as int? ?? 0,
@@ -161,7 +267,10 @@ class BuildingState {
       targetResource: json['targetResource'] != null
           ? ResourceType.fromName(json['targetResource'] as String)
           : null,
-      currentProgressTicks: (json['currentProgressTicks'] as num?)?.toDouble() ?? 0.0,
+      miningAllocations: miningAllocations,
+      recipeAllocations: recipeAllocations,
+      currentProgressTicks:
+          (json['currentProgressTicks'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }

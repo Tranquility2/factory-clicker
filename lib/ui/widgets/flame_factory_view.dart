@@ -8,6 +8,7 @@ import '../../models/game_state.dart';
 import '../../models/recipe.dart';
 import '../../models/resource_type.dart';
 import '../../models/technology.dart';
+import '../../simulation/game_engine.dart';
 
 class FactoryVisualizerGame extends FlameGame {
   GameState? _state;
@@ -253,6 +254,7 @@ class FactoryVisualizerGame extends FlameGame {
       );
     final resourceColor = _resourceColor(edge.resource);
     final bounds = path.getBounds().inflate(4);
+    final active = edge.source.isRunning && edge.destination.isRunning;
 
     canvas.drawPath(
       path,
@@ -267,28 +269,29 @@ class FactoryVisualizerGame extends FlameGame {
       Paint()
         ..shader = LinearGradient(
           colors: [
-            edge.source.color.withValues(alpha: 0.35),
-            resourceColor,
-            edge.destination.color.withValues(alpha: 0.75),
+            edge.source.color.withValues(alpha: active ? 0.35 : 0.1),
+            resourceColor.withValues(alpha: active ? 1 : 0.2),
+            edge.destination.color.withValues(alpha: active ? 0.75 : 0.1),
           ],
         ).createShader(bounds)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 4
         ..strokeCap = StrokeCap.round,
     );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = resourceColor.withValues(alpha: 0.28)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 12
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-    );
+    if (active) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = resourceColor.withValues(alpha: 0.28)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 12
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+      );
+    }
 
     final metrics = path.computeMetrics().toList();
     if (metrics.isEmpty) return;
     final metric = metrics.first;
-    final active = edge.source.isRunning && edge.destination.isRunning;
     if (active) {
       for (var packet = 0; packet < 3; packet++) {
         final progress = (_time * 0.35 + packet / 3 + index * 0.11) % 1;
@@ -375,7 +378,9 @@ class FactoryVisualizerGame extends FlameGame {
   ) {
     final phase = (_time * 0.2 + index * 0.13) % 1;
     final card = RRect.fromRectAndRadius(rect, const Radius.circular(9));
-    final statusColor = node.isRunning
+    final statusColor = node.isComplete
+        ? const Color(0xFF06B6D4)
+        : node.isRunning
         ? const Color(0xFF10B981)
         : const Color(0xFFEF4444);
 
@@ -445,6 +450,16 @@ class FactoryVisualizerGame extends FlameGame {
       color: node.color,
       fontSize: 7.5,
       weight: FontWeight.bold,
+    );
+    _paintText(
+      canvas,
+      node.statusLabel,
+      Offset(rect.right - 8, rect.top + 19),
+      color: statusColor,
+      fontSize: 6,
+      weight: FontWeight.bold,
+      maxWidth: rect.width * 0.48,
+      anchor: _TextAnchor.topRight,
     );
 
     final assignmentRect = Rect.fromLTWH(
@@ -618,6 +633,8 @@ class _FactoryNode {
   final Set<ResourceType> outputs;
   final Color color;
   final bool isRunning;
+  final String statusLabel;
+  final bool isComplete;
   final double? progress;
 
   const _FactoryNode({
@@ -630,6 +647,8 @@ class _FactoryNode {
     required this.outputs,
     required this.color,
     required this.isRunning,
+    required this.statusLabel,
+    this.isComplete = false,
     this.progress,
   });
 
@@ -655,53 +674,89 @@ List<_FactoryNode> _buildFactoryNodes(GameState state) {
   void addMiner(BuildingType type, Color color) {
     final building = state.buildings[type];
     if (building == null || building.count == 0) return;
-    final target = building.targetResource ?? ResourceType.ironOre;
     final needsFuel = type == BuildingType.burnerMiner;
-    final hasFuel = !needsFuel || (state.inventory[ResourceType.coal] ?? 0) > 0;
-    nodes.add(
-      _FactoryNode(
-        type: type,
-        stage: 0,
-        count: building.count,
-        assignmentVerb: 'MINING TARGET',
-        assignment: target.label,
-        inputs: needsFuel ? {ResourceType.coal} : const {},
-        outputs: {target},
-        color: color,
-        isRunning: hasFuel,
-      ),
-    );
+    final fuelNeeded =
+        0.1 *
+        building.allocatedCount *
+        state.gameSpeedMultiplier *
+        state.prestigeMultiplier /
+        GameEngine.ticksPerSecond;
+    final availableFuel = state.inventory[ResourceType.coal] ?? 0;
+    final activityRatio = needsFuel && fuelNeeded > 0
+        ? min(1.0, availableFuel / fuelNeeded)
+        : 1.0;
+    final hasFuel = !needsFuel || activityRatio > 0;
+    for (final allocation in building.miningAllocations.entries) {
+      if (allocation.value <= 0) continue;
+      nodes.add(
+        _FactoryNode(
+          type: type,
+          stage: 0,
+          count: allocation.value,
+          assignmentVerb: 'MINING TARGET',
+          assignment: allocation.key.label,
+          inputs: needsFuel ? {ResourceType.coal} : const {},
+          outputs: {allocation.key},
+          color: color,
+          isRunning: hasFuel,
+          statusLabel: !hasFuel
+              ? 'NEEDS COAL'
+              : activityRatio < 1
+              ? 'THROTTLED'
+              : 'RUNNING',
+        ),
+      );
+    }
   }
 
   void addRecipeMachine(BuildingType type, int stage, Color color) {
     final building = state.buildings[type];
     if (building == null || building.count == 0) return;
-    final recipe = building.activeRecipeId == null
-        ? null
-        : Recipe.getById(building.activeRecipeId!);
-    final hasInputs =
-        recipe != null &&
-        recipe.inputs.entries.every(
-          (entry) => (state.inventory[entry.key] ?? 0) > 0,
-        );
-    nodes.add(
-      _FactoryNode(
-        type: type,
-        stage: stage,
-        count: building.count,
-        assignmentVerb: type == BuildingType.rocketSilo
-            ? 'BUILDING'
-            : 'ACTIVE RECIPE',
-        assignment: recipe?.name ?? 'Unassigned',
-        inputs: recipe?.inputs.keys.toSet() ?? const {},
-        outputs: recipe?.outputs.keys.toSet() ?? const {},
-        color: color,
-        isRunning: hasInputs,
-        progress: type == BuildingType.rocketSilo
-            ? (state.rocketPartsBuilt / 100).clamp(0, 1)
-            : null,
-      ),
-    );
+    for (final allocation in building.recipeAllocations.entries) {
+      if (allocation.value <= 0) continue;
+      final recipe = Recipe.getById(allocation.key);
+      if (recipe == null) continue;
+      final isComplete =
+          type == BuildingType.rocketSilo && state.rocketPartsBuilt >= 100;
+      final stepFactor =
+          (1 / recipe.durationTicks) *
+          type.craftSpeed *
+          allocation.value *
+          state.gameSpeedMultiplier *
+          state.prestigeMultiplier;
+      final missingInputs = recipe.inputs.entries
+          .where(
+            (entry) =>
+                (state.inventory[entry.key] ?? 0) < entry.value * stepFactor,
+          )
+          .map((entry) => entry.key.label.toUpperCase())
+          .toList();
+      final hasInputs = !isComplete && missingInputs.isEmpty;
+      nodes.add(
+        _FactoryNode(
+          type: type,
+          stage: stage,
+          count: allocation.value,
+          assignmentVerb: type == BuildingType.rocketSilo
+              ? 'BUILDING'
+              : 'ACTIVE RECIPE',
+          assignment: recipe.name,
+          inputs: recipe.inputs.keys.toSet(),
+          outputs: recipe.outputs.keys.toSet(),
+          color: color,
+          isRunning: hasInputs,
+          statusLabel: isComplete
+              ? 'READY'
+              : hasInputs
+              ? 'RUNNING'
+              : 'NEEDS ${missingInputs.join(' + ')}',
+          isComplete: isComplete,
+          progress: type == BuildingType.rocketSilo
+              ? (state.rocketPartsBuilt / 100).clamp(0, 1)
+              : null,
+        ),
+      );
+    }
   }
 
   addMiner(BuildingType.burnerMiner, const Color(0xFFF59E0B));
@@ -716,11 +771,28 @@ List<_FactoryNode> _buildFactoryNodes(GameState state) {
     final technology = state.activeResearchId == null
         ? null
         : Technology.getById(state.activeResearchId!);
+    final progressRate = technology == null
+        ? 0.0
+        : (1 / technology.researchDurationTicks) *
+              lab.count *
+              state.gameSpeedMultiplier *
+              state.prestigeMultiplier;
     final hasPacks =
         technology != null &&
         technology.cost.entries.every(
-          (entry) => (state.inventory[entry.key] ?? 0) > 0,
+          (entry) =>
+              (state.inventory[entry.key] ?? 0) >= entry.value * progressRate,
         );
+    final missingPacks =
+        technology?.cost.entries
+            .where(
+              (entry) =>
+                  (state.inventory[entry.key] ?? 0) <
+                  entry.value * progressRate,
+            )
+            .map((entry) => entry.key.label.toUpperCase())
+            .join(' + ') ??
+        '';
     nodes.add(
       _FactoryNode(
         type: BuildingType.researchLab,
@@ -732,6 +804,11 @@ List<_FactoryNode> _buildFactoryNodes(GameState state) {
         outputs: const {},
         color: const Color(0xFF10B981),
         isRunning: hasPacks,
+        statusLabel: hasPacks
+            ? 'RUNNING'
+            : technology == null
+            ? 'IDLE'
+            : 'NEEDS $missingPacks',
       ),
     );
   }
