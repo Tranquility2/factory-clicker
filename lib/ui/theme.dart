@@ -57,6 +57,6 @@ class FactoryTheme {
     if (value >= 1e9) return '${(value / 1e9).toStringAsFixed(2)}B';
     if (value >= 1e6) return '${(value / 1e6).toStringAsFixed(2)}M';
     if (value >= 1e3) return '${(value / 1e3).toStringAsFixed(1)}K';
-    return value.toStringAsFixed(value < 10 && value > 0 && value != value.roundToDouble() ? 1 : 0);
+    return value.toStringAsFixed(value != value.roundToDouble() ? 1 : 0);
   }
 }

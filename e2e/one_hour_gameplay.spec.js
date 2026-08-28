@@ -30,7 +30,6 @@ test.describe('1-Hour Full Progression Simulation Playthrough', () => {
     // Ensure we are on CRAFTING tab
     await page.getByText('CRAFTING').first().click();
     await page.waitForTimeout(600);
-    await page.screenshot({ path: './play-stage1-early-game.png' });
 
     // -------------------------------------------------------------
     // STAGE 2: Smelting & Machines Tab (Mins 10 - 25)
@@ -71,7 +70,6 @@ test.describe('1-Hour Full Progression Simulation Playthrough', () => {
     // Switch to MACHINES tab to see all purchased drills and furnaces
     await page.getByText('MACHINES').first().click();
     await page.waitForTimeout(600);
-    await page.screenshot({ path: './play-stage2-smelting-automation.png' });
 
     // -------------------------------------------------------------
     // STAGE 3: Advanced Research & Tech Tree (Mins 25 - 45)
@@ -114,7 +112,6 @@ test.describe('1-Hour Full Progression Simulation Playthrough', () => {
     // Switch to RESEARCH tab to see research progression
     await page.getByText('RESEARCH').first().click();
     await page.waitForTimeout(600);
-    await page.screenshot({ path: './play-stage3-advanced-assembly.png' });
 
     // -------------------------------------------------------------
     // STAGE 4: Rocket Silo & Launch Prestige (Mins 45 - 60+)
@@ -153,14 +150,12 @@ test.describe('1-Hour Full Progression Simulation Playthrough', () => {
     // Switch to ROCKET SILO tab
     await page.getByText('ROCKET SILO').first().click();
     await page.waitForTimeout(800);
-    await page.screenshot({ path: './play-stage4-rocket-silo-ready.png' });
 
     // -------------------------------------------------------------
     // STAGE 5: Launch Rocket & Verify Prestige
     // -------------------------------------------------------------
     await page.getByRole('button', { name: 'Launch Rocket Prestige' }).click();
     await page.waitForTimeout(1000);
-    await page.screenshot({ path: './play-stage5-rocket-prestige-launched.png' });
 
     // Verify Space Science was awarded
     const postPrestigeRaw = await page.evaluate(() => window['__gameDebug'].getState());

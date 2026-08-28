@@ -35,7 +35,38 @@ test.describe('Factory Clicker E2E Integration Suite', () => {
     expect(state.inventory.copperPlate).toBeGreaterThanOrEqual(50);
   });
 
-  test('3. Full tech tree unlock and state persistence', async ({ page }) => {
+  test('3. Purchased burner miner produces its assigned resource', async ({ page }) => {
+    // Let persisted-state initialization finish before interacting.
+    await page.waitForTimeout(750);
+    await page.evaluate(() => {
+      const enableAccessibility = document.querySelector(
+        'flt-semantics-placeholder'
+      );
+      if (enableAccessibility) enableAccessibility.click();
+      window['__gameDebug'].addResource('ironPlate', 10);
+      window['__gameDebug'].setSpeed(10);
+    });
+
+    const beforeRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const before = JSON.parse(beforeRaw);
+    await page.getByRole('button', {
+      name: 'Buy Burner Mining Drill'
+    }).click();
+    await page.waitForTimeout(1200);
+
+    const afterRaw = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const after = JSON.parse(afterRaw);
+    expect(after.buildings.burner_miner.count).toBe(1);
+    expect(after.buildings.burner_miner.targetResource).toBe('ironOre');
+    expect(after.inventory.ironOre).toBeGreaterThan(before.inventory.ironOre);
+    expect(after.inventory.coal).toBeLessThan(before.inventory.coal);
+  });
+
+  test('4. Full tech tree unlock and state persistence', async ({ page }) => {
     // Unlock all technologies
     await page.evaluate(() => window['__gameDebug'].unlockAllTech());
 
@@ -48,7 +79,42 @@ test.describe('Factory Clicker E2E Integration Suite', () => {
     expect(state.unlockedTechIds).toContain('rocketry');
   });
 
-  test('4. End-to-end automation simulation and rocket launch prestige', async ({ page }) => {
+  test('5. Reset Save clears persisted progress', async ({ page }) => {
+    await page.waitForTimeout(750);
+    await page.evaluate(() => {
+      const enableAccessibility = document.querySelector(
+        'flt-semantics-placeholder'
+      );
+      if (enableAccessibility) enableAccessibility.click();
+      window['__gameDebug'].addResource('ironPlate', 100);
+    });
+
+    await page.getByText('SETTINGS').first().click();
+    await page.getByRole('button', { name: 'SAVE GAME' }).click();
+    await page.getByRole('button', { name: 'Reset saved game' }).click();
+    await page.getByRole('button', { name: 'RESET EVERYTHING' }).click();
+    await page.waitForFunction(async () => {
+      const state = JSON.parse(window['__gameDebug'].getState());
+      return state.inventory.ironPlate === 0;
+    });
+    await page.reload();
+    await page.waitForFunction(
+      () => typeof window['__gameDebug'] !== 'undefined'
+    );
+    await page.waitForTimeout(750);
+
+    const rawState = await page.evaluate(
+      () => window['__gameDebug'].getState()
+    );
+    const state = JSON.parse(rawState);
+    expect(state.inventory.coal).toBe(10);
+    expect(state.inventory.ironOre).toBe(10);
+    expect(state.inventory.ironPlate).toBe(0);
+    expect(state.buildings.burner_miner.count).toBe(0);
+    expect(state.unlockedTechIds).toEqual([]);
+  });
+
+  test('6. End-to-end automation simulation and rocket launch prestige', async ({ page }) => {
     // Accelerate simulation
     await page.evaluate(() => window['__gameDebug'].setSpeed(20));
     await page.evaluate(() => window['__gameDebug'].unlockAllTech());

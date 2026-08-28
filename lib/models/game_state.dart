@@ -89,7 +89,9 @@ class GameState {
   }
 
   bool isBuildingUnlocked(BuildingType type) {
-    if (type == BuildingType.burnerMiner || type == BuildingType.stoneFurnace) return true;
+    if (type == BuildingType.burnerMiner || type == BuildingType.stoneFurnace) {
+      return true;
+    }
     for (final tech in Technology.all) {
       if (tech.unlockedBuildingIds.contains(type.id)) {
         return unlockedTechIds.contains(tech.id);
@@ -100,7 +102,7 @@ class GameState {
 
   Map<String, dynamic> toJson() => {
     'inventory': inventory.map((k, v) => MapEntry(k.name, v)),
-    'buildings': buildings.map((k, v) => MapEntry(k.name, v.toJson())),
+    'buildings': buildings.map((k, v) => MapEntry(k.id, v.toJson())),
     'unlockedTechIds': unlockedTechIds.toList(),
     'activeResearchId': activeResearchId,
     'researchProgressTicks': researchProgressTicks,
@@ -128,8 +130,10 @@ class GameState {
     if (json['buildings'] != null) {
       final rawBlds = json['buildings'] as Map<String, dynamic>;
       for (final type in BuildingType.values) {
-        if (rawBlds.containsKey(type.name)) {
-          blds[type] = BuildingState.fromJson(rawBlds[type.name] as Map<String, dynamic>);
+        final rawBuilding =
+            rawBlds[type.id] ?? rawBlds[type.key] ?? rawBlds[type.name];
+        if (rawBuilding is Map<String, dynamic>) {
+          blds[type] = BuildingState.fromJson(rawBuilding);
         } else {
           blds[type] = BuildingState(type: type, count: 0);
         }

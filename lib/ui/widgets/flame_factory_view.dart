@@ -1,465 +1,394 @@
 import 'dart:math';
+
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import '../../models/game_state.dart';
+
 import '../../models/building.dart';
+import '../../models/game_state.dart';
 import '../../models/recipe.dart';
+import '../../models/resource_type.dart';
+import '../../models/technology.dart';
 
 class FactoryVisualizerGame extends FlameGame {
-  GameState? _lastState;
-  double _animationTime = 0.0;
+  GameState? _state;
+  double _animationTime = 0;
 
   void updateGameState(GameState state) {
-    _lastState = state;
+    _state = state;
   }
 
   @override
   void update(double dt) {
     super.update(dt);
-    final mult = (_lastState?.gameSpeedMultiplier ?? 1.0).clamp(0.5, 50.0);
-    _animationTime += dt * mult;
+    final speed = (_state?.gameSpeedMultiplier ?? 1).clamp(0.5, 12);
+    _animationTime += dt * speed;
   }
 
   @override
   void render(Canvas canvas) {
     super.render(canvas);
-
-    // Deep factory floor background
-    final bgPaint = Paint()..color = const Color(0xFF0E1116);
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), bgPaint);
-
-    // Subtle isometric-like floor grid
-    final gridPaint = Paint()
-      ..color = const Color(0xFF161B23)
-      ..strokeWidth = 1.0;
-
-    const gridSize = 24.0;
-    for (double x = 0; x < size.x; x += gridSize) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.y), gridPaint);
-    }
-    for (double y = 0; y < size.y; y += gridSize) {
-      canvas.drawLine(Offset(0, y), Offset(size.x, y), gridPaint);
-    }
-
-    if (_lastState == null) return;
-
-    final burnerCount = _lastState!.buildings[BuildingType.burnerMiner]?.count ?? 0;
-    final electricCount = _lastState!.buildings[BuildingType.electricMiner]?.count ?? 0;
-    final stoneFurnaceCount = _lastState!.buildings[BuildingType.stoneFurnace]?.count ?? 0;
-    final steelFurnaceCount = _lastState!.buildings[BuildingType.steelFurnace]?.count ?? 0;
-    final assembler1Count = _lastState!.buildings[BuildingType.assembler1]?.count ?? 0;
-    final assembler2Count = _lastState!.buildings[BuildingType.assembler2]?.count ?? 0;
-    final labCount = _lastState!.buildings[BuildingType.researchLab]?.count ?? 0;
-    final siloCount = _lastState!.buildings[BuildingType.rocketSilo]?.count ?? 0;
-    final rocketParts = _lastState!.rocketPartsBuilt;
-    final launches = _lastState!.totalRocketLaunches;
-
-    // Determine Factory Tier
-    String tierName = 'STAGE 1: MANUAL EXTRACTION';
-    Color tierColor = const Color(0xFF9CA3AF);
-
-    if (siloCount > 0 || rocketParts > 0 || launches > 0) {
-      tierName = 'STAGE 4: ORBITAL SPACE PROGRAM';
-      tierColor = const Color(0xFFA855F7);
-    } else if (assembler1Count > 0 || assembler2Count > 0 || labCount > 0) {
-      tierName = 'STAGE 3: HIGH-TECH AUTOMATION & LABS';
-      tierColor = const Color(0xFF06B6D4);
-    } else if (stoneFurnaceCount > 0 || steelFurnaceCount > 0 || burnerCount > 0 || electricCount > 0) {
-      tierName = 'STAGE 2: INDUSTRIAL SMELTING';
-      tierColor = const Color(0xFFF59E0B);
-    }
-
-    // Top Tier Banner
-    final tierBannerPaint = Paint()
-      ..color = tierColor.withValues(alpha: 0.12)
-      ..style = PaintingStyle.fill;
-    final tierBorderPaint = Paint()
-      ..color = tierColor.withValues(alpha: 0.5)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    final bannerRect = Rect.fromLTWH(12, 6, size.x - 24, 20);
-    canvas.drawRRect(RRect.fromRectAndRadius(bannerRect, const Radius.circular(4)), tierBannerPaint);
-    canvas.drawRRect(RRect.fromRectAndRadius(bannerRect, const Radius.circular(4)), tierBorderPaint);
-
-    final tierTextPainter = TextPainter(
-      text: TextSpan(
-        text: '🏭 $tierName',
-        style: TextStyle(
-          color: tierColor,
-          fontSize: 10.0,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.8,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.x, size.y),
+      Paint()..color = const Color(0xFF0E1116),
     );
-    tierTextPainter.layout();
-    tierTextPainter.paint(canvas, Offset(size.x / 2 - tierTextPainter.width / 2, 9));
+    _drawGrid(canvas);
 
-    // Build specific machine nodes
-    final nodes = <_DetailedMachineNode>[];
+    final state = _state;
+    if (state == null) return;
 
-    // 1. Miners
-    if (burnerCount > 0) {
-      nodes.add(_DetailedMachineNode(
-        name: 'Burner Drill',
-        count: burnerCount,
-        color: const Color(0xFFD97706),
-        icon: '⛏️',
-        subtext: 'Coal/Ore',
-        speed: 0.5,
-        type: _MachineKind.miner,
-      ));
+    final chains = _buildResourceChains(state);
+    _drawHeader(canvas, chains);
+    _drawChains(canvas, chains);
+  }
+
+  void _drawGrid(Canvas canvas) {
+    final paint = Paint()
+      ..color = const Color(0xFF171C25)
+      ..strokeWidth = 1;
+    const spacing = 24.0;
+    for (double x = 0; x < size.x; x += spacing) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.y), paint);
     }
-    if (electricCount > 0) {
-      nodes.add(_DetailedMachineNode(
-        name: 'Electric Drill',
-        count: electricCount,
-        color: const Color(0xFFFBBF24),
-        icon: '⚡',
-        subtext: 'Fast Ore',
-        speed: 1.5,
-        type: _MachineKind.miner,
-      ));
+    for (double y = 0; y < size.y; y += spacing) {
+      canvas.drawLine(Offset(0, y), Offset(size.x, y), paint);
     }
-    if (nodes.isEmpty) {
-      nodes.add(_DetailedMachineNode(
-        name: 'Manual Mining',
-        count: 1,
+  }
+
+  void _drawHeader(Canvas canvas, List<_ResourceChain> chains) {
+    final activeCount = chains.where((chain) => chain.isRunning).length;
+    final label = chains.isEmpty
+        ? 'FACTORY FLOW · NO AUTOMATION'
+        : 'FACTORY FLOW · $activeCount/${chains.length} CHAINS RUNNING';
+    final color = activeCount == chains.length && chains.isNotEmpty
+        ? const Color(0xFF10B981)
+        : const Color(0xFFF59E0B);
+
+    final rect = Rect.fromLTWH(12, 7, size.x - 24, 24);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(5)),
+      Paint()..color = color.withValues(alpha: 0.12),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(5)),
+      Paint()
+        ..color = color.withValues(alpha: 0.55)
+        ..style = PaintingStyle.stroke,
+    );
+    _paintText(
+      canvas,
+      label,
+      Offset(size.x / 2, 13),
+      color: color,
+      fontSize: 10,
+      weight: FontWeight.bold,
+      anchor: _TextAnchor.topCenter,
+    );
+  }
+
+  void _drawChains(Canvas canvas, List<_ResourceChain> chains) {
+    if (chains.isEmpty) {
+      _paintText(
+        canvas,
+        'Build a miner to start your first resource chain',
+        Offset(size.x / 2, size.y / 2),
         color: const Color(0xFF9CA3AF),
-        icon: '⛏️',
-        subtext: 'Click Ore',
-        speed: 1.0,
-        type: _MachineKind.miner,
-      ));
-    }
-
-    // 2. Smelters
-    if (stoneFurnaceCount > 0) {
-      final recipeId = _lastState!.buildings[BuildingType.stoneFurnace]?.activeRecipeId ?? 'smelt_iron';
-      final recipe = Recipe.getById(recipeId);
-      nodes.add(_DetailedMachineNode(
-        name: 'Stone Furnace',
-        count: stoneFurnaceCount,
-        color: const Color(0xFFEF4444),
-        icon: '🔥',
-        subtext: recipe?.name ?? 'Smelting',
-        speed: 1.0,
-        type: _MachineKind.smelter,
-      ));
-    }
-    if (steelFurnaceCount > 0) {
-      final recipeId = _lastState!.buildings[BuildingType.steelFurnace]?.activeRecipeId ?? 'smelt_steel';
-      final recipe = Recipe.getById(recipeId);
-      nodes.add(_DetailedMachineNode(
-        name: 'Steel Furnace',
-        count: steelFurnaceCount,
-        color: const Color(0xFFDC2626),
-        icon: '🏭',
-        subtext: recipe?.name ?? 'Steel/Plates',
-        speed: 2.0,
-        type: _MachineKind.smelter,
-      ));
-    }
-
-    // 3. Assemblers
-    if (assembler1Count > 0) {
-      final recipeId = _lastState!.buildings[BuildingType.assembler1]?.activeRecipeId;
-      final recipe = recipeId != null ? Recipe.getById(recipeId) : null;
-      nodes.add(_DetailedMachineNode(
-        name: 'Assembler I',
-        count: assembler1Count,
-        color: const Color(0xFF3B82F6),
-        icon: '🛠️',
-        subtext: recipe?.name ?? 'Gears/Wire',
-        speed: 0.75,
-        type: _MachineKind.assembler,
-      ));
-    }
-    if (assembler2Count > 0) {
-      final recipeId = _lastState!.buildings[BuildingType.assembler2]?.activeRecipeId;
-      final recipe = recipeId != null ? Recipe.getById(recipeId) : null;
-      nodes.add(_DetailedMachineNode(
-        name: 'Assembler II',
-        count: assembler2Count,
-        color: const Color(0xFF2563EB),
-        icon: '⚙️',
-        subtext: recipe?.name ?? 'Circuits/Packs',
-        speed: 1.5,
-        type: _MachineKind.assembler,
-      ));
-    }
-
-    // 4. Research Labs
-    if (labCount > 0) {
-      final activeTech = _lastState!.activeResearchId;
-      nodes.add(_DetailedMachineNode(
-        name: 'Research Lab',
-        count: labCount,
-        color: const Color(0xFF10B981),
-        icon: '🔬',
-        subtext: activeTech != null ? 'Researching' : 'Idle',
-        speed: 1.0,
-        hasActivity: activeTech != null,
-        type: _MachineKind.lab,
-      ));
-    }
-
-    // 5. Rocket Silo
-    if (siloCount > 0 || rocketParts > 0) {
-      nodes.add(_DetailedMachineNode(
-        name: 'Rocket Silo',
-        count: max(1, siloCount),
-        color: const Color(0xFFA855F7),
-        icon: '🚀',
-        subtext: '$rocketParts% Built',
-        speed: 1.0,
-        progress: (rocketParts / 100.0).clamp(0.0, 1.0),
-        type: _MachineKind.silo,
-      ));
-    }
-
-    final n = nodes.length;
-    if (n == 0) return;
-
-    // Layout configuration
-    final padding = 16.0;
-    final availableWidth = size.x - (padding * 2);
-    final slotWidth = availableWidth / n;
-    final boxWidth = min(120.0, slotWidth - 10.0).clamp(68.0, 120.0);
-    final boxHeight = 90.0;
-    final centerY = size.y / 2 + 10;
-
-    final positions = <Offset>[];
-    for (int i = 0; i < n; i++) {
-      final cx = padding + (slotWidth * i) + (slotWidth / 2);
-      positions.add(Offset(cx, centerY));
-    }
-
-    // 1. Draw animated connecting pipes/belts with moving ingredients
-    for (int i = 0; i < n - 1; i++) {
-      final start = positions[i];
-      final end = positions[i + 1];
-      _drawPipeline(
-        canvas: canvas,
-        from: Offset(start.dx + boxWidth / 2, centerY),
-        to: Offset(end.dx - boxWidth / 2, centerY),
-        fromNode: nodes[i],
-        toNode: nodes[i + 1],
-        time: _animationTime,
+        fontSize: 12,
+        anchor: _TextAnchor.center,
       );
+      return;
     }
 
-    // 2. Draw each specific machine node
-    for (int i = 0; i < n; i++) {
-      _drawDetailedMachine(
-        canvas: canvas,
-        pos: positions[i],
-        width: boxWidth,
-        height: boxHeight,
-        node: nodes[i],
-        time: _animationTime,
+    final columns = columnsForWidth(size.x);
+    const gap = 10.0;
+    const horizontalPadding = 12.0;
+    const top = 39.0;
+    const cardHeight = 84.0;
+    final cardWidth =
+        (size.x - horizontalPadding * 2 - gap * (columns - 1)) / columns;
+
+    for (var index = 0; index < chains.length; index++) {
+      final row = index ~/ columns;
+      final column = index % columns;
+      final rect = Rect.fromLTWH(
+        horizontalPadding + column * (cardWidth + gap),
+        top + row * (cardHeight + gap),
+        cardWidth,
+        cardHeight,
       );
+      _drawChainCard(canvas, rect, chains[index], index);
     }
   }
 
-  void _drawPipeline({
-    required Canvas canvas,
-    required Offset from,
-    required Offset to,
-    required _DetailedMachineNode fromNode,
-    required _DetailedMachineNode toNode,
-    required double time,
-  }) {
-    if (to.dx <= from.dx) return;
+  void _drawChainCard(
+    Canvas canvas,
+    Rect rect,
+    _ResourceChain chain,
+    int index,
+  ) {
+    final statusColor = chain.isRunning
+        ? const Color(0xFF10B981)
+        : const Color(0xFFEF4444);
+    final card = RRect.fromRectAndRadius(rect, const Radius.circular(7));
 
-    final beltHeight = 8.0;
-    final beltRect = Rect.fromLTRB(from.dx, from.dy - beltHeight / 2, to.dx, to.dy + beltHeight / 2);
-
-    final bgPaint = Paint()..color = const Color(0xFF1E2430);
-    final borderPaint = Paint()
-      ..color = const Color(0xFF333E52)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    canvas.drawRRect(RRect.fromRectAndRadius(beltRect, const Radius.circular(2)), bgPaint);
-    canvas.drawRRect(RRect.fromRectAndRadius(beltRect, const Radius.circular(2)), borderPaint);
-
-    final length = to.dx - from.dx;
-    final flowColor = toNode.color.withValues(alpha: 0.8);
-    final arrowPaint = Paint()
-      ..color = flowColor
-      ..strokeWidth = 1.5;
-
-    // Moving directional arrows
-    final offset = (time * 30.0) % 14.0;
-    for (double x = from.dx + offset; x < to.dx - 2; x += 14.0) {
-      if (x > from.dx + 2) {
-        canvas.drawLine(Offset(x - 2, from.dy - 2), Offset(x + 1, from.dy), arrowPaint);
-        canvas.drawLine(Offset(x + 1, from.dy), Offset(x - 2, from.dy + 2), arrowPaint);
-      }
-    }
-
-    // Moving resource packet
-    final itemProgress = (time * 0.85) % 1.0;
-    final itemX = from.dx + (length * itemProgress);
-    final itemPaint = Paint()..color = fromNode.color;
-    canvas.drawCircle(Offset(itemX, from.dy), 2.5, itemPaint);
-  }
-
-  void _drawDetailedMachine({
-    required Canvas canvas,
-    required Offset pos,
-    required double width,
-    required double height,
-    required _DetailedMachineNode node,
-    required double time,
-  }) {
-    final rect = Rect.fromCenter(center: pos, width: width, height: height);
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(8));
-
-    final pulse = node.hasActivity ? (sin(time * 3.5) * 0.15 + 0.85) : 0.65;
-
-    final fillPaint = Paint()
-      ..color = node.color.withValues(alpha: 0.12 * pulse)
-      ..style = PaintingStyle.fill;
-
-    final borderPaint = Paint()
-      ..color = node.color.withValues(alpha: 0.8 * pulse)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    canvas.drawRRect(rrect, fillPaint);
-    canvas.drawRRect(rrect, borderPaint);
-
-    // Header badge (Name + Count)
-    final titleText = '${node.name} (${node.count})';
-    final titlePainter = TextPainter(
-      text: TextSpan(
-        text: titleText,
-        style: TextStyle(
-          color: node.color,
-          fontSize: (width < 90) ? 8.5 : 9.5,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.2,
-        ),
-      ),
-      maxLines: 1,
-      ellipsis: '..',
-      textDirection: TextDirection.ltr,
-    );
-    titlePainter.layout(maxWidth: width - 8);
-    titlePainter.paint(
-      canvas,
-      Offset(pos.dx - titlePainter.width / 2, pos.dy - height / 2 + 6),
-    );
-
-    // Center icon
-    final iconPainter = TextPainter(
-      text: TextSpan(
-        text: node.icon,
-        style: TextStyle(fontSize: (width < 90) ? 18.0 : 22.0),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    iconPainter.layout();
-    iconPainter.paint(
-      canvas,
-      Offset(pos.dx - iconPainter.width / 2, pos.dy - 10),
-    );
-
-    // Smoke particles for furnaces
-    if (node.type == _MachineKind.smelter && node.hasActivity) {
-      final smokePaint = Paint()..color = const Color(0x669CA3AF);
-      for (int s = 0; s < 2; s++) {
-        final st = (time * 1.8 + (s * 0.5)) % 1.0;
-        final sx = pos.dx + sin(time * 3 + s) * 4;
-        final sy = (pos.dy - height / 2) - (st * 14);
-        canvas.drawCircle(Offset(sx, sy), 1.5 + (st * 2.5), smokePaint);
-      }
-    }
-
-    // Spinning mini-gear for assemblers
-    if (node.type == _MachineKind.assembler && node.hasActivity) {
-      canvas.save();
-      canvas.translate(pos.dx + width / 2 - 12, pos.dy + height / 2 - 14);
-      canvas.rotate(time * 3.0 * node.speed);
-      final gearPaint = Paint()
-        ..color = node.color
+    canvas.drawRRect(card, Paint()..color = const Color(0xEE181C24));
+    canvas.drawRRect(
+      card,
+      Paint()
+        ..color = chain.color.withValues(alpha: 0.72)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2;
-      canvas.drawCircle(Offset.zero, 3.5, gearPaint);
-      for (int c = 0; c < 4; c++) {
-        final rad = c * (pi / 2);
-        canvas.drawLine(Offset(cos(rad) * 3, sin(rad) * 3), Offset(cos(rad) * 5.5, sin(rad) * 5.5), gearPaint);
-      }
-      canvas.restore();
+        ..strokeWidth = 1.2,
+    );
+
+    canvas.drawCircle(
+      Offset(rect.left + 10, rect.top + 11),
+      3,
+      Paint()..color = statusColor,
+    );
+    _paintText(
+      canvas,
+      '${chain.machineName} ×${chain.count}',
+      Offset(rect.left + 18, rect.top + 5),
+      color: chain.color,
+      fontSize: 9.5,
+      weight: FontWeight.bold,
+      maxWidth: rect.width - 28,
+    );
+
+    final flowY = rect.top + 42;
+    canvas.drawLine(
+      Offset(rect.left + 10, flowY),
+      Offset(rect.right - 10, flowY),
+      Paint()
+        ..color = const Color(0xFF30394A)
+        ..strokeWidth = 2,
+    );
+
+    if (chain.isRunning) {
+      final progress = (_animationTime * 0.55 + index * 0.17) % 1;
+      canvas.drawCircle(
+        Offset(rect.left + 12 + (rect.width - 24) * progress, flowY),
+        3,
+        Paint()..color = chain.color,
+      );
     }
 
-    // Sublabel (Assigned Recipe / Target)
-    final subPainter = TextPainter(
-      text: TextSpan(
-        text: node.subtext,
-        style: const TextStyle(
-          color: Color(0xFF9CA3AF),
-          fontSize: 8.5,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      maxLines: 1,
-      ellipsis: '..',
-      textDirection: TextDirection.ltr,
-    );
-    subPainter.layout(maxWidth: width - 6);
-    subPainter.paint(
+    final inputText = chain.inputs.isEmpty
+        ? '∞'
+        : chain.inputs.map((resource) => resource.icon).join('+');
+    final outputText = chain.outputs.isEmpty
+        ? chain.outputLabel
+        : chain.outputs.map((resource) => resource.icon).join('+');
+    final flowText = '$inputText  →  ${chain.machineIcon}  →  $outputText';
+    _paintText(
       canvas,
-      Offset(pos.dx - subPainter.width / 2, pos.dy + height / 2 - 20),
+      flowText,
+      Offset(rect.center.dx, flowY - 12),
+      color: const Color(0xFFF3F4F6),
+      fontSize: rect.width < 180 ? 13 : 15,
+      weight: FontWeight.bold,
+      maxWidth: rect.width - 16,
+      anchor: _TextAnchor.topCenter,
     );
 
-    // Progress bar for Rocket Silo
-    if (node.progress != null) {
-      final barWidth = width - 14;
-      final barBg = Paint()..color = const Color(0xFF222834);
-      final barFg = Paint()..color = node.color;
-      final barY = pos.dy + height / 2 - 8;
-      final barRect = Rect.fromLTWH(pos.dx - barWidth / 2, barY, barWidth, 4);
-      canvas.drawRRect(RRect.fromRectAndRadius(barRect, const Radius.circular(2)), barBg);
+    final status = chain.isRunning ? 'RUNNING' : chain.blockedReason;
+    _paintText(
+      canvas,
+      '${chain.detail} · $status',
+      Offset(rect.left + 9, rect.bottom - 18),
+      color: chain.isRunning
+          ? const Color(0xFF9CA3AF)
+          : const Color(0xFFF87171),
+      fontSize: 8.5,
+      maxWidth: rect.width - 18,
+    );
+
+    if (chain.progress != null) {
+      final progressRect = Rect.fromLTWH(
+        rect.left + 9,
+        rect.bottom - 7,
+        rect.width - 18,
+        3,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(progressRect, const Radius.circular(2)),
+        Paint()..color = const Color(0xFF30394A),
+      );
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromLTWH(pos.dx - barWidth / 2, barY, barWidth * node.progress!, 4),
+          Rect.fromLTWH(
+            progressRect.left,
+            progressRect.top,
+            progressRect.width * chain.progress!,
+            progressRect.height,
+          ),
           const Radius.circular(2),
         ),
-        barFg,
+        Paint()..color = chain.color,
       );
     }
+  }
+
+  void _paintText(
+    Canvas canvas,
+    String text,
+    Offset position, {
+    required Color color,
+    required double fontSize,
+    FontWeight weight = FontWeight.normal,
+    double? maxWidth,
+    _TextAnchor anchor = _TextAnchor.topLeft,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(color: color, fontSize: fontSize, fontWeight: weight),
+      ),
+      maxLines: 1,
+      ellipsis: '…',
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth ?? double.infinity);
+
+    final offset = switch (anchor) {
+      _TextAnchor.topLeft => position,
+      _TextAnchor.topCenter => Offset(
+        position.dx - painter.width / 2,
+        position.dy,
+      ),
+      _TextAnchor.center => Offset(
+        position.dx - painter.width / 2,
+        position.dy - painter.height / 2,
+      ),
+    };
+    painter.paint(canvas, offset);
   }
 }
 
-enum _MachineKind { miner, smelter, assembler, lab, silo }
+enum _TextAnchor { topLeft, topCenter, center }
 
-class _DetailedMachineNode {
-  final String name;
+class _ResourceChain {
+  final String machineName;
+  final String machineIcon;
   final int count;
+  final List<ResourceType> inputs;
+  final List<ResourceType> outputs;
+  final String outputLabel;
+  final String detail;
   final Color color;
-  final String icon;
-  final String subtext;
-  final double speed;
-  final bool hasActivity;
-  final _MachineKind type;
+  final bool isRunning;
+  final String blockedReason;
   final double? progress;
 
-  _DetailedMachineNode({
-    required this.name,
+  const _ResourceChain({
+    required this.machineName,
+    required this.machineIcon,
     required this.count,
+    required this.inputs,
+    required this.outputs,
+    this.outputLabel = '',
+    required this.detail,
     required this.color,
-    required this.icon,
-    required this.subtext,
-    required this.speed,
-    this.hasActivity = true,
-    required this.type,
+    required this.isRunning,
+    this.blockedReason = 'STARVED',
     this.progress,
   });
+}
+
+List<_ResourceChain> _buildResourceChains(GameState state) {
+  final chains = <_ResourceChain>[];
+
+  void addMiner(BuildingType type, Color color) {
+    final building = state.buildings[type];
+    if (building == null || building.count == 0) return;
+    final target = building.targetResource ?? ResourceType.ironOre;
+    final needsFuel = type == BuildingType.burnerMiner;
+    final hasFuel = !needsFuel || (state.inventory[ResourceType.coal] ?? 0) > 0;
+    chains.add(
+      _ResourceChain(
+        machineName: type.name,
+        machineIcon: type.icon,
+        count: building.count,
+        inputs: needsFuel ? const [ResourceType.coal] : const [],
+        outputs: [target],
+        detail: 'Mining ${target.label}',
+        color: color,
+        isRunning: hasFuel,
+        blockedReason: 'NO COAL',
+      ),
+    );
+  }
+
+  void addRecipeMachine(BuildingType type, Color color) {
+    final building = state.buildings[type];
+    if (building == null || building.count == 0) return;
+    final recipe = building.activeRecipeId == null
+        ? null
+        : Recipe.getById(building.activeRecipeId!);
+    final hasInputs =
+        recipe != null &&
+        recipe.inputs.entries.every(
+          (entry) => (state.inventory[entry.key] ?? 0) > 0,
+        );
+    chains.add(
+      _ResourceChain(
+        machineName: type.name,
+        machineIcon: type.icon,
+        count: building.count,
+        inputs: recipe?.inputs.keys.toList() ?? const [],
+        outputs: recipe?.outputs.keys.toList() ?? const [],
+        outputLabel: '?',
+        detail: recipe?.name ?? 'No recipe selected',
+        color: color,
+        isRunning: hasInputs,
+        blockedReason: recipe == null ? 'NO RECIPE' : 'MISSING INPUT',
+        progress: type == BuildingType.rocketSilo
+            ? (state.rocketPartsBuilt / 100).clamp(0, 1)
+            : null,
+      ),
+    );
+  }
+
+  addMiner(BuildingType.burnerMiner, const Color(0xFFD97706));
+  addMiner(BuildingType.electricMiner, const Color(0xFFFBBF24));
+  addRecipeMachine(BuildingType.stoneFurnace, const Color(0xFFEF4444));
+  addRecipeMachine(BuildingType.steelFurnace, const Color(0xFFDC2626));
+  addRecipeMachine(BuildingType.assembler1, const Color(0xFF3B82F6));
+  addRecipeMachine(BuildingType.assembler2, const Color(0xFF2563EB));
+
+  final lab = state.buildings[BuildingType.researchLab];
+  if (lab != null && lab.count > 0) {
+    final technology = state.activeResearchId == null
+        ? null
+        : Technology.getById(state.activeResearchId!);
+    final hasInputs =
+        technology != null &&
+        technology.cost.entries.every(
+          (entry) => (state.inventory[entry.key] ?? 0) > 0,
+        );
+    chains.add(
+      _ResourceChain(
+        machineName: BuildingType.researchLab.name,
+        machineIcon: BuildingType.researchLab.icon,
+        count: lab.count,
+        inputs: technology?.cost.keys.toList() ?? const [],
+        outputs: const [],
+        outputLabel: 'TECH',
+        detail: technology?.name ?? 'No active research',
+        color: const Color(0xFF10B981),
+        isRunning: hasInputs,
+        blockedReason: technology == null ? 'IDLE' : 'MISSING PACKS',
+      ),
+    );
+  }
+
+  addRecipeMachine(BuildingType.rocketSilo, const Color(0xFFA855F7));
+  return chains;
+}
+
+int columnsForWidth(double width) {
+  if (width >= 1050) return 4;
+  if (width >= 720) return 3;
+  if (width >= 460) return 2;
+  return 1;
 }
 
 class FlameFactoryWidget extends StatefulWidget {
@@ -477,8 +406,7 @@ class _FlameFactoryWidgetState extends State<FlameFactoryWidget> {
   @override
   void initState() {
     super.initState();
-    _game = FactoryVisualizerGame();
-    _game.updateGameState(widget.state);
+    _game = FactoryVisualizerGame()..updateGameState(widget.state);
   }
 
   @override
@@ -489,15 +417,24 @@ class _FlameFactoryWidgetState extends State<FlameFactoryWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 155,
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E1116),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF242A38)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: GameWidget(game: _game),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final chainCount = max(1, _buildResourceChains(widget.state).length);
+        final columns = columnsForWidth(constraints.maxWidth);
+        final rows = (chainCount / columns).ceil();
+        final height = 39 + rows * 94 + 6;
+
+        return Container(
+          height: height.toDouble(),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0E1116),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFF242A38)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: GameWidget(game: _game),
+        );
+      },
     );
   }
 }

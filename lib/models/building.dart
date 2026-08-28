@@ -110,6 +110,8 @@ enum BuildingType {
     required this.icon,
   });
 
+  String get key => toString().split('.').last;
+
   Map<ResourceType, int> costForCount(int currentCount) {
     final factor = currentCount > 0 ? (costMultiplier == 1.0 ? 1.0 : (costMultiplier * currentCount)) : 1.0;
     
@@ -131,12 +133,12 @@ class BuildingState {
     required this.type,
     this.count = 0,
     this.activeRecipeId,
-    this.targetResource,
+    ResourceType? targetResource,
     this.currentProgressTicks = 0.0,
-  });
+  }) : targetResource = targetResource ?? (type.category == BuildingCategory.mining ? ResourceType.ironOre : null);
 
   Map<String, dynamic> toJson() => {
-    'type': type.name,
+    'type': type.id,
     'count': count,
     'activeRecipeId': activeRecipeId,
     'targetResource': targetResource?.name,
@@ -144,8 +146,12 @@ class BuildingState {
   };
 
   factory BuildingState.fromJson(Map<String, dynamic> json) {
+    final rawType = json['type'] as String?;
     final type = BuildingType.values.firstWhere(
-      (b) => b.name == json['type'],
+      (building) =>
+          building.id == rawType ||
+          building.key == rawType ||
+          building.name == rawType,
       orElse: () => BuildingType.burnerMiner,
     );
     return BuildingState(

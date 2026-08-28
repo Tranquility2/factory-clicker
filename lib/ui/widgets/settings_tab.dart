@@ -151,6 +151,40 @@ class _SettingsTabState extends State<SettingsTab> {
                     ),
                     child: const Text('IMPORT SAVE'),
                   ),
+                  const Divider(color: FactoryTheme.border, height: 32),
+                  const Text(
+                    'DANGER ZONE',
+                    style: TextStyle(
+                      color: FactoryTheme.accentRed,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Permanently erase this save and restart from the initial resources.',
+                    style: TextStyle(
+                      color: FactoryTheme.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Semantics(
+                    identifier: 'reset-save-btn',
+                    label: 'Reset saved game',
+                    button: true,
+                    child: ElevatedButton.icon(
+                      key: const ValueKey('btn-reset-save'),
+                      onPressed: _confirmReset,
+                      icon: const Icon(Icons.delete_forever, size: 18),
+                      label: const Text('RESET SAVE'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: FactoryTheme.accentRed,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
                   if (_statusMessage != null) ...[
                     const SizedBox(height: 10),
                     Text(
@@ -165,5 +199,44 @@ class _SettingsTabState extends State<SettingsTab> {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmReset() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset all progress?'),
+        content: const Text(
+          'This permanently deletes the current factory, research, '
+          'rocket launches, and Space Science. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            key: const ValueKey('btn-confirm-reset-save'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: FactoryTheme.accentRed,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('RESET EVERYTHING'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final success = await widget.engine.resetSave();
+    if (!mounted) return;
+    setState(() {
+      _importController.clear();
+      _statusMessage = success
+          ? 'Save reset successfully.'
+          : 'Could not reset the save.';
+    });
   }
 }

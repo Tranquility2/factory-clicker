@@ -135,23 +135,31 @@ class GameEngine extends ChangeNotifier {
   void _processMiners(double multiplier) {
     // Burner Miner
     final burner = state.buildings[BuildingType.burnerMiner];
-    if (burner != null && burner.count > 0 && burner.targetResource != null) {
-      final coalAvailable = (state.inventory[ResourceType.coal] ?? 0.0) > 0.01;
-      if (coalAvailable) {
-        // Burner consumes 0.005 coal per tick per miner
-        final coalConsumed = 0.005 * burner.count * multiplier;
-        if (_consumeResource(ResourceType.coal, coalConsumed)) {
-          final produced = 0.02 * burner.count * multiplier * burner.type.craftSpeed;
-          _addResource(burner.targetResource!, produced);
-        }
+    if (burner != null && burner.count > 0) {
+      final target = burner.targetResource ?? ResourceType.ironOre;
+      burner.targetResource = target;
+
+      // Burner drills produce at their declared craft speed and consume
+      // 0.1 coal per second per drill.
+      final coalConsumed = 0.1 * burner.count * multiplier / ticksPerSecond;
+      if (_consumeResource(ResourceType.coal, coalConsumed)) {
+        final produced =
+            burner.type.craftSpeed * burner.count * multiplier / ticksPerSecond;
+        _addResource(target, produced);
       }
     }
 
     // Electric Miner
     final electric = state.buildings[BuildingType.electricMiner];
-    if (electric != null && electric.count > 0 && electric.targetResource != null) {
-      final produced = 0.05 * electric.count * multiplier * electric.type.craftSpeed;
-      _addResource(electric.targetResource!, produced);
+    if (electric != null && electric.count > 0) {
+      final target = electric.targetResource ?? ResourceType.ironOre;
+      electric.targetResource = target;
+      final produced =
+          electric.type.craftSpeed *
+          electric.count *
+          multiplier /
+          ticksPerSecond;
+      _addResource(target, produced);
     }
   }
 
@@ -353,6 +361,27 @@ class GameEngine extends ChangeNotifier {
       await prefs.setString(saveKey, jsonEncode(state.toJson()));
     } catch (e) {
       debugPrint('Save error: $e');
+    }
+  }
+
+  Future<bool> resetSave() async {
+    final wasRunning = _timer?.isActive ?? false;
+    stop();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(saveKey);
+      state = GameState();
+      _ticksSinceLastSave = 0;
+      _ticksSinceLastRateCalculation = 0;
+      _initRates();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Reset error: $e');
+      return false;
+    } finally {
+      if (wasRunning) start();
     }
   }
 
