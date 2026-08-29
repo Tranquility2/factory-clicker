@@ -9,6 +9,7 @@ import '../../models/recipe.dart';
 import '../../models/resource_type.dart';
 import '../../models/technology.dart';
 import '../../simulation/game_engine.dart';
+import '../theme.dart';
 
 class FactoryVisualizerGame extends FlameGame {
   GameState? _state;
@@ -765,6 +766,7 @@ class FactoryVisualizerGame extends FlameGame {
           fontSize: fontSize,
           fontWeight: weight,
           letterSpacing: letterSpacing,
+          fontFamilyFallback: FactoryTheme.fontFamilyFallback,
         ),
       ),
       maxLines: 1,

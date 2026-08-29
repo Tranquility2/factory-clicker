@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 class FactoryTheme {
+  static const List<String> fontFamilyFallback = ['Noto Color Emoji'];
+
   static const Color background = Color(0xFF101216);
   static const Color surface = Color(0xFF181C24);
   static const Color surfaceLight = Color(0xFF222834);
@@ -16,6 +18,7 @@ class FactoryTheme {
   static ThemeData get themeData {
     return ThemeData(
       brightness: Brightness.dark,
+      fontFamilyFallback: fontFamilyFallback,
       scaffoldBackgroundColor: background,
       colorScheme: const ColorScheme.dark(
         primary: accentAmber,
