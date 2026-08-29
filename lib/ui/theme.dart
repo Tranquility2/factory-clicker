@@ -18,6 +18,7 @@ class FactoryTheme {
   static ThemeData get themeData {
     return ThemeData(
       brightness: Brightness.dark,
+      fontFamily: 'Noto Sans',
       fontFamilyFallback: fontFamilyFallback,
       scaffoldBackgroundColor: background,
       colorScheme: const ColorScheme.dark(

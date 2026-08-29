@@ -766,6 +766,7 @@ class FactoryVisualizerGame extends FlameGame {
           fontSize: fontSize,
           fontWeight: weight,
           letterSpacing: letterSpacing,
+          fontFamily: 'Noto Sans',
           fontFamilyFallback: FactoryTheme.fontFamilyFallback,
         ),
       ),
