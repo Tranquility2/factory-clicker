@@ -6,6 +6,8 @@ and launch rockets for permanent Space Science bonuses.
 
 [![Web build and deploy](https://github.com/Tranquility2/factory-clicker/actions/workflows/deploy-web.yml/badge.svg?branch=main)](https://github.com/Tranquility2/factory-clicker/actions/workflows/deploy-web.yml)
 [![Play in your browser](https://img.shields.io/badge/Play-GitHub%20Pages-2ea44f?logo=github)](https://tranquility2.github.io/factory-clicker/)
+[![Built with Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569B?logo=flutter&logoColor=white)](https://flutter.dev/)
+[![AI assisted by GitHub Copilot](https://img.shields.io/badge/AI%20assisted-GitHub%20Copilot-000000?logo=githubcopilot&logoColor=white)](https://github.com/features/copilot)
 
 ![Factory Clicker late-game factory](factory-late-game-full.png)
 
