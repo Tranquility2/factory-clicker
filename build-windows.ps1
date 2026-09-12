@@ -38,7 +38,7 @@ $outputDir = "build\windows\x64\runner\Release"
 $exePath = "$outputDir\factory_clicker.exe"
 
 if (Test-Path $exePath) {
-    Write-Host "`n✔ Build successful!" -ForegroundColor Green
+    Write-Host "Build successful!" -ForegroundColor Green
     Write-Host "Executable location: $exePath" -ForegroundColor Cyan
     Write-Host "Full release bundle: $outputDir" -ForegroundColor Cyan
 
