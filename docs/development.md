@@ -78,28 +78,50 @@ plan.
 In repository **Settings > Pages**, select **GitHub Actions** as the build and
 deployment source. The workflow in `.github/workflows/deploy-web.yml` then:
 
-1. Runs on pushes to `main`, or manually from **Actions > Build and deploy web**.
+1. Runs on pushes to `main`, version tags (`v*`), or manually from **Actions > Build and deploy web**.
 2. Installs Flutter 3.47.1 and the dependency versions in `pubspec.lock`.
 3. Builds the web release using the Pages base path (`/factory-clicker/`).
-4. Uploads only `build/web` and deploys it to the `github-pages` environment.
+4. Uploads only `build/web`, deploying `main` to Pages or publishing a tagged web release.
 
 Deployment is restricted to `main`. Actions are pinned to commit hashes, and
 the workflow uses the built-in GitHub token; no personal access token is
 needed. Renderer resources are served with the game instead of from a CDN,
-and source maps are not published. The pipeline only builds and deploys; browser
-playtesting remains separate.
+and source maps are not published. The build targets JavaScript and skips the
+optional WebAssembly compatibility probe. Browser playtesting remains separate.
 
 To reproduce the hosted release locally:
 
 ```bash
 flutter pub get --enforce-lockfile
-flutter build web --release --no-pub --no-web-resources-cdn --no-source-maps \
+flutter build web --release --no-pub --no-web-resources-cdn --no-source-maps --no-wasm-dry-run \
   --base-href /factory-clicker/ --output build/pages/factory-clicker
 python3 -m http.server 8080 --directory build/pages
 ```
 
 Open <http://localhost:8080/factory-clicker/>. Use `make build-web` and
 `make serve` for the usual root-path local build.
+
+### Publish a versioned web release
+
+The version in `pubspec.yaml` is the source of truth. After updating and
+committing it, push an annotated tag matching the version without the build
+suffix. For example, for `version: 1.1.0+2`:
+
+```bash
+git push origin main
+git tag -a v1.1.0 -m "Factory Clicker v1.1.0 web release"
+git push origin v1.1.0
+```
+
+The workflow rejects tags that do not match `pubspec.yaml`. A version tag
+publishes a GitHub release with a downloadable web ZIP, SHA-256 checksum, and
+the play-online link. The ZIP preserves the Pages subdirectory so it can be
+served with the same asset paths. Release notes include local serving
+instructions.
+
+The README version badge follows the latest published release automatically.
+Tagged releases do not replace the live Pages site, which continues to follow
+`main`. Use a new version and tag for each release; do not move published tags.
 
 ## Build desktop releases
 

@@ -3,13 +3,14 @@ name: Build and deploy web
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: github-pages
+  group: github-pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -20,9 +21,24 @@ jobs:
     permissions:
       contents: read
       pages: read
+    outputs:
+      base_path: ${{ steps.pages.outputs.base_path }}
+      page_url: ${{ steps.pages.outputs.base_url }}
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="$(awk '/^version:/ {print $2}' pubspec.yaml)"
+          VERSION="${VERSION%%+*}"
+          if [ "$RELEASE_TAG" != "v$VERSION" ]; then
+            echo "::error::Release tag must match pubspec.yaml version: v$VERSION"
+            exit 1
+          fi
 
       - name: Set up Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
@@ -43,7 +59,7 @@ jobs:
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
         run: >-
           flutter build web --release --no-pub
-          --no-web-resources-cdn --no-source-maps
+          --no-web-resources-cdn --no-source-maps --no-wasm-dry-run
           --base-href "$BASE_PATH/"
 
       - name: Upload Pages artifact
@@ -67,3 +83,47 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+  release:
+    name: Publish web release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      BASE_PATH: ${{ needs.build.outputs.base_path }}
+      PAGE_URL: ${{ needs.build.outputs.page_url }}
+    steps:
+      - name: Download web build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: github-pages
+          path: artifact
+
+      - name: Package web release
+        run: |
+          mkdir -p "package${BASE_PATH}"
+          tar -xf artifact/artifact.tar -C "package${BASE_PATH}"
+          (cd package && zip -qr "../factory-clicker-web-${RELEASE_TAG}.zip" .)
+          sha256sum "factory-clicker-web-${RELEASE_TAG}.zip" > SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "factory-clicker-web-${RELEASE_TAG}.zip" SHA256SUMS.txt \
+            --verify-tag --latest \
+            --title "Factory Clicker ${RELEASE_TAG} (Web)" \
+            --notes "Play online: ${PAGE_URL}/
+
+          Download factory-clicker-web-${RELEASE_TAG}.zip and extract it.
+          From the extracted directory, run: python3 -m http.server 8080
+          Then open http://localhost:8080${BASE_PATH}/.
+
+          The ZIP preserves the hosting subdirectory; serve the extracted directory, not the nested game folder.
+          SHA256SUMS.txt contains the archive checksum."
