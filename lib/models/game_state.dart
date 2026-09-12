@@ -104,6 +104,36 @@ class GameState {
     return maxStorageCapacity;
   }
 
+  double researchTicksForStep(Technology technology) {
+    final labCount = buildings[BuildingType.researchLab]?.count ?? 0;
+    final progress = activeResearchId == technology.id
+        ? researchProgressTicks
+        : 0.0;
+    final remaining = max(0.0, technology.researchDurationTicks - progress);
+    return min(remaining, labCount * gameSpeedMultiplier * prestigeMultiplier);
+  }
+
+  Map<ResourceType, double> researchCostsForStep(Technology technology) {
+    final progressRate =
+        researchTicksForStep(technology) / technology.researchDurationTicks;
+    return technology.cost.map((resource, totalCost) {
+      final required = totalCost * progressRate;
+      final available = inventory[resource] ?? 0.0;
+      // Snap fractional spending round-off to the actual remaining inventory.
+      final amount = (available - required).abs() <= 1e-9
+          ? max(0.0, available)
+          : required;
+      return MapEntry(resource, amount);
+    });
+  }
+
+  List<ResourceType> missingResearchResources(Technology technology) {
+    return researchCostsForStep(technology).entries
+        .where((entry) => (inventory[entry.key] ?? 0.0) < entry.value)
+        .map((entry) => entry.key)
+        .toList();
+  }
+
   bool isTechUnlocked(String techId) => unlockedTechIds.contains(techId);
 
   bool isRecipeUnlocked(Recipe recipe) {

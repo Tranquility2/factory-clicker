@@ -27,19 +27,9 @@ class ResearchTab extends StatelessWidget {
           (req) => state.isTechUnlocked(req),
         );
         final canStart = engine.canStartResearch(tech.id);
-        final progressRate = labCount == 0
-            ? 0.0
-            : (1 / tech.researchDurationTicks) *
-                  labCount *
-                  state.gameSpeedMultiplier *
-                  state.prestigeMultiplier;
-        final missingResources = tech.cost.entries
-            .where(
-              (entry) =>
-                  (state.inventory[entry.key] ?? 0) <
-                  entry.value * progressRate,
-            )
-            .map((entry) => entry.key.label)
+        final missingResources = state
+            .missingResearchResources(tech)
+            .map((resource) => resource.label)
             .toList();
         final isProgressing =
             isActive && labCount > 0 && missingResources.isEmpty;

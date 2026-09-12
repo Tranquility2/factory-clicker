@@ -970,28 +970,13 @@ List<_FactoryNode> _buildFactoryNodes(GameState state) {
     final technology = state.activeResearchId == null
         ? null
         : Technology.getById(state.activeResearchId!);
-    final progressRate = technology == null
-        ? 0.0
-        : (1 / technology.researchDurationTicks) *
-              lab.count *
-              state.gameSpeedMultiplier *
-              state.prestigeMultiplier;
-    final hasPacks =
-        technology != null &&
-        technology.cost.entries.every(
-          (entry) =>
-              (state.inventory[entry.key] ?? 0) >= entry.value * progressRate,
-        );
-    final missingPacks =
-        technology?.cost.entries
-            .where(
-              (entry) =>
-                  (state.inventory[entry.key] ?? 0) <
-                  entry.value * progressRate,
-            )
-            .map((entry) => entry.key.label.toUpperCase())
-            .join(' + ') ??
-        '';
+    final missingResources = technology == null
+        ? const <ResourceType>[]
+        : state.missingResearchResources(technology);
+    final hasPacks = technology != null && missingResources.isEmpty;
+    final missingPacks = missingResources
+        .map((resource) => resource.label.toUpperCase())
+        .join(' + ');
     nodes.add(
       _FactoryNode(
         type: BuildingType.researchLab,

@@ -436,21 +436,12 @@ class BuildingsTab extends StatelessWidget {
       final technology = state.activeResearchId == null
           ? null
           : Technology.getById(state.activeResearchId!);
-      final progressRate = technology == null
-          ? 0.0
-          : (1 / technology.researchDurationTicks) *
-                building.count *
-                multiplier;
-      final missing =
-          technology?.cost.entries
-              .where(
-                (entry) =>
-                    (state.inventory[entry.key] ?? 0) <
-                    entry.value * progressRate,
-              )
-              .map((entry) => entry.key.label)
-              .toList() ??
-          const <String>[];
+      final missing = technology == null
+          ? const <String>[]
+          : state
+                .missingResearchResources(technology)
+                .map((resource) => resource.label)
+                .toList();
       isRunning = technology != null && missing.isEmpty;
       summary = technology == null
           ? 'IDLE — Select a technology in Research'

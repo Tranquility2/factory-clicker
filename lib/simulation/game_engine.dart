@@ -65,7 +65,7 @@ class GameEngine extends ChangeNotifier {
     _processSmelters(tickMultiplier);
     _processAssemblers(tickMultiplier);
     _syncRocketParts();
-    _processResearch(tickMultiplier);
+    _processResearch();
 
     _ticksSinceLastSave++;
     if (_ticksSinceLastSave >= ticksPerSecond * 10) {
@@ -289,29 +289,24 @@ class GameEngine extends ChangeNotifier {
     state.rocketPartsBuilt = parts.floor();
   }
 
-  void _processResearch(double multiplier) {
+  void _processResearch() {
     final lab = state.buildings[BuildingType.researchLab];
     if (lab == null || lab.count == 0 || state.activeResearchId == null) return;
 
     final tech = Technology.getById(state.activeResearchId!);
     if (tech == null) return;
 
-    final progressRate =
-        (1.0 / tech.researchDurationTicks) * lab.count * multiplier;
-
-    bool hasPacks = true;
-    for (final entry in tech.cost.entries) {
-      if ((state.inventory[entry.key] ?? 0.0) < entry.value * progressRate) {
-        hasPacks = false;
-        break;
-      }
-    }
+    final progressTicks = state.researchTicksForStep(tech);
+    final costs = state.researchCostsForStep(tech);
+    final hasPacks = costs.entries.every(
+      (entry) => (state.inventory[entry.key] ?? 0.0) >= entry.value,
+    );
 
     if (hasPacks) {
-      for (final entry in tech.cost.entries) {
-        _consumeResource(entry.key, entry.value * progressRate);
+      for (final entry in costs.entries) {
+        _consumeResource(entry.key, entry.value);
       }
-      state.researchProgressTicks += 1.0 * lab.count * multiplier;
+      state.researchProgressTicks += progressTicks;
 
       if (state.researchProgressTicks >= tech.researchDurationTicks) {
         state.unlockedTechIds.add(tech.id);
