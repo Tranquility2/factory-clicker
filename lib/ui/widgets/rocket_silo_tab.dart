@@ -18,7 +18,10 @@ class RocketSiloTab extends StatefulWidget {
 
 class _RocketSiloTabState extends State<RocketSiloTab>
     with SingleTickerProviderStateMixin {
+  static const double _liftoffProgress = 0.66;
   late final AnimationController _launch;
+  final GlobalKey _rocketKey = GlobalKey();
+  OverlayEntry? _launchOverlay;
   bool _isLaunching = false;
 
   @override
@@ -32,6 +35,7 @@ class _RocketSiloTabState extends State<RocketSiloTab>
 
   @override
   void dispose() {
+    _removeLaunchOverlay();
     _launch.dispose();
     super.dispose();
   }
@@ -68,25 +72,24 @@ class _RocketSiloTabState extends State<RocketSiloTab>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Transform.translate(
-                              offset: Offset(
-                                0,
-                                progress > 0.72 ? -(progress - 0.72) * 250 : 0,
-                              ),
+                            Opacity(
+                              opacity:
+                                  _isLaunching && progress >= _liftoffProgress
+                                  ? 0
+                                  : 1,
                               child: Text(
-                                progress > 0.72 ? '🚀' : '🚀',
+                                '🚀',
+                                key: _rocketKey,
                                 style: TextStyle(
                                   fontSize: 48,
-                                  shadows: ignition > 0
-                                      ? [
-                                          Shadow(
-                                            color: Colors.orange.withValues(
-                                              alpha: ignition,
-                                            ),
-                                            blurRadius: 18 * ignition,
-                                          ),
-                                        ]
-                                      : null,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.orange.withValues(
+                                        alpha: ignition,
+                                      ),
+                                      blurRadius: 18 * ignition,
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -239,22 +242,114 @@ class _RocketSiloTabState extends State<RocketSiloTab>
 
   Future<void> _startLaunch() async {
     if (_isLaunching || widget.state.rocketPartsBuilt < 100) return;
+    final rocketContext = _rocketKey.currentContext!;
+    final rocketBox = rocketContext.findRenderObject()! as RenderBox;
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlayBox = overlay.context.findRenderObject()! as RenderBox;
+    final rocketSize = rocketBox.size;
+    final position = rocketBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final viewportBox =
+        Scrollable.of(rocketContext).context.findRenderObject()! as RenderBox;
+    final viewportOrigin = viewportBox.localToGlobal(
+      Offset.zero,
+      ancestor: overlayBox,
+    );
+    // Keep liftoff in the visible silo if the pad icon has scrolled away.
+    final top = max(0.0, viewportOrigin.dy);
+    final bottom = max(
+      top,
+      min(overlayBox.size.height, viewportOrigin.dy + viewportBox.size.height) -
+          rocketSize.height,
+    );
+    final origin = Offset(position.dx, position.dy.clamp(top, bottom));
+    final textStyle = DefaultTextStyle.of(rocketContext).style
+        .copyWith(fontSize: 48);
+    final entry = OverlayEntry(
+      builder: (_) => _buildRocketOverlay(origin, rocketSize, textStyle),
+    );
+
     setState(() {
       _isLaunching = true;
     });
-    await _launch.forward(from: 0);
-    widget.engine.launchRocket();
-    if (!mounted) return;
-    setState(() {
-      _isLaunching = false;
-    });
-    _launch.reset();
+    _launchOverlay = entry;
+    overlay.insert(entry);
+    try {
+      await _launch.forward(from: 0).orCancel;
+      if (mounted) widget.engine.launchRocket();
+    } on TickerCanceled {
+      // Leaving the silo cancels the flight without consuming the rocket.
+    } finally {
+      _removeLaunchOverlay();
+      if (mounted) {
+        setState(() {
+          _isLaunching = false;
+        });
+        _launch.reset();
+      }
+    }
+  }
+
+  Widget _buildRocketOverlay(
+    Offset origin,
+    Size rocketSize,
+    TextStyle textStyle,
+  ) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ExcludeSemantics(
+          child: AnimatedBuilder(
+            animation: _launch,
+            builder: (context, child) {
+              final progress = _launch.value;
+              if (progress < _liftoffProgress) return const SizedBox.shrink();
+              final ignition = ((progress - 0.45) / 0.25).clamp(0.0, 1.0);
+              final flight = Curves.easeInCubic.transform(
+                ((progress - _liftoffProgress) / (1 - _liftoffProgress)).clamp(
+                  0.0,
+                  1.0,
+                ),
+              );
+              final shake = sin(progress * pi * 42) * ignition * 4;
+              final travel = origin.dy + rocketSize.height + 24;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: origin.dx + shake,
+                    top: origin.dy - flight * travel,
+                    width: rocketSize.width,
+                    height: rocketSize.height,
+                    child: Text(
+                      '🚀',
+                      style: textStyle.copyWith(
+                        shadows: [
+                          Shadow(
+                            color: Colors.orange.withValues(alpha: ignition),
+                            blurRadius: 18 * ignition,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _removeLaunchOverlay() {
+    _launchOverlay?.remove();
+    _launchOverlay?.dispose();
+    _launchOverlay = null;
   }
 
   String _countdownLabel(double progress) {
     if (progress < 0.22) return 'IGNITION IN 3';
     if (progress < 0.44) return 'IGNITION IN 2';
-    if (progress < 0.66) return 'IGNITION IN 1';
+    if (progress < _liftoffProgress) return 'IGNITION IN 1';
     if (progress < 0.82) return 'LIFTOFF';
     return 'ORBIT ACHIEVED';
   }
