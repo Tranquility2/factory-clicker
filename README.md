@@ -4,6 +4,8 @@ An incremental factory automation game built with Flutter. Gather raw
 materials, divide machines between production lines, research new technology,
 and launch rockets for permanent Space Science bonuses.
 
+**[Play in your browser](https://tranquility2.github.io/factory-clicker/)**
+
 ![Factory Clicker late-game factory](factory-late-game-full.png)
 
 ## Highlights

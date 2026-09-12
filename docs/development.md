@@ -65,6 +65,42 @@ make build-web
 make serve
 ```
 
+## Deploy to GitHub Pages
+
+The public web game is hosted at:
+
+<https://tranquility2.github.io/factory-clicker/>
+
+The repository can remain private; the deployed game and its bundled assets
+are public. GitHub Pages for private repositories requires an eligible GitHub
+plan.
+
+In repository **Settings > Pages**, select **GitHub Actions** as the build and
+deployment source. The workflow in `.github/workflows/deploy-web.yml` then:
+
+1. Runs on pushes to `main`, or manually from **Actions > Build and deploy web**.
+2. Installs Flutter 3.47.1 and the dependency versions in `pubspec.lock`.
+3. Builds the web release using the Pages base path (`/factory-clicker/`).
+4. Uploads only `build/web` and deploys it to the `github-pages` environment.
+
+Deployment is restricted to `main`. Actions are pinned to commit hashes, and
+the workflow uses the built-in GitHub token; no personal access token is
+needed. Renderer resources are served with the game instead of from a CDN,
+and source maps are not published. The pipeline only builds and deploys; browser
+playtesting remains separate.
+
+To reproduce the hosted release locally:
+
+```bash
+flutter pub get --enforce-lockfile
+flutter build web --release --no-pub --no-web-resources-cdn --no-source-maps \
+  --base-href /factory-clicker/ --output build/pages/factory-clicker
+python3 -m http.server 8080 --directory build/pages
+```
+
+Open <http://localhost:8080/factory-clicker/>. Use `make build-web` and
+`make serve` for the usual root-path local build.
+
 ## Build desktop releases
 
 Build Linux:
