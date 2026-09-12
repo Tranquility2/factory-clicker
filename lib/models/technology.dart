@@ -31,7 +31,7 @@ class Technology {
       cost: {ResourceType.ironPlate: 10, ResourceType.copperPlate: 10},
       researchDurationTicks: 100, // 5s
       unlockedRecipeIds: ['craft_copper_wire', 'craft_iron_gear', 'craft_automation_science'],
-      unlockedBuildingIds: ['assembler_1'],
+      unlockedBuildingIds: ['assembler_1', 'iron_chest'],
       icon: '⚙️',
     ),
     Technology(
@@ -53,7 +53,7 @@ class Technology {
       researchDurationTicks: 300,
       prerequisites: ['automation_1'],
       unlockedRecipeIds: ['smelt_steel'],
-      unlockedBuildingIds: ['steel_furnace'],
+      unlockedBuildingIds: ['steel_furnace', 'steel_chest'],
       icon: '🔩',
     ),
     Technology(

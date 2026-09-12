@@ -77,10 +77,17 @@ class GameEngine extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _addResource(ResourceType type, double amount) {
+  double _addResource(ResourceType type, double amount) {
+    if (amount <= 0) return 0.0;
     final current = state.inventory[type] ?? 0.0;
-    state.inventory[type] = (current + amount);
-    _tickDeltas[type] = (_tickDeltas[type] ?? 0.0) + amount;
+    final maxCap = state.maxStorageFor(type);
+    final allowed = max(0.0, maxCap - current);
+    final added = min(amount, allowed);
+    if (added > 0) {
+      state.inventory[type] = current + added;
+      _tickDeltas[type] = (_tickDeltas[type] ?? 0.0) + added;
+    }
+    return added;
   }
 
   bool _consumeResource(ResourceType type, double amount) {
@@ -94,6 +101,10 @@ class GameEngine extends ChangeNotifier {
   }
 
   void manualGather(ResourceType type) {
+    final current = state.inventory[type] ?? 0.0;
+    if (current >= state.maxStorageFor(type)) {
+      return;
+    }
     state.totalManualClicks++;
     _addResource(type, 1.0);
     notifyListeners();
@@ -106,6 +117,11 @@ class GameEngine extends ChangeNotifier {
         return false;
       }
     }
+    final hasOutputRoom = recipe.outputs.keys.any((outRes) {
+      final current = state.inventory[outRes] ?? 0.0;
+      return current < state.maxStorageFor(outRes);
+    });
+    if (!hasOutputRoom) return false;
     return true;
   }
 
@@ -145,9 +161,17 @@ class GameEngine extends ChangeNotifier {
           .toList();
       if (allocations.isEmpty) continue;
 
+      final activeAllocations = allocations.where((allocation) {
+        final current = state.inventory[allocation.key] ?? 0.0;
+        final maxCap = state.maxStorageFor(allocation.key);
+        return current < maxCap;
+      }).toList();
+
+      if (activeAllocations.isEmpty) continue;
+
       var activityRatio = 1.0;
       if (type == BuildingType.burnerMiner) {
-        final allocatedMiners = allocations.fold<int>(
+        final allocatedMiners = activeAllocations.fold<int>(
           0,
           (total, entry) => total + entry.value,
         );
@@ -158,13 +182,19 @@ class GameEngine extends ChangeNotifier {
         _consumeResource(ResourceType.coal, fuelNeeded * activityRatio);
       }
 
-      for (final allocation in allocations) {
-        final produced =
+      for (final allocation in activeAllocations) {
+        final current = state.inventory[allocation.key] ?? 0.0;
+        final maxCap = state.maxStorageFor(allocation.key);
+        final headroom = max(0.0, maxCap - current);
+        if (headroom <= 0) continue;
+
+        final desiredProduction =
             type.craftSpeed *
             allocation.value *
             multiplier *
             activityRatio /
             ticksPerSecond;
+        final produced = min(desiredProduction, headroom);
         _addResource(allocation.key, produced);
       }
     }
@@ -226,13 +256,16 @@ class GameEngine extends ChangeNotifier {
         type.craftSpeed *
         machineCount *
         multiplier;
-    final rocketOutput = recipe.outputs[ResourceType.rocketPart];
-    if (rocketOutput != null) {
-      final currentParts = state.inventory[ResourceType.rocketPart] ?? 0;
-      final headroom = max(0.0, 100 - currentParts);
-      if (headroom == 0) return;
-      stepFactor = min(stepFactor, headroom / rocketOutput);
+
+    for (final entry in recipe.outputs.entries) {
+      final current = state.inventory[entry.key] ?? 0.0;
+      final maxCap = state.maxStorageFor(entry.key);
+      final headroom = max(0.0, maxCap - current);
+      if (headroom <= 0) return;
+      stepFactor = min(stepFactor, headroom / entry.value);
     }
+    if (stepFactor <= 0) return;
+
     final hasIngredients = recipe.inputs.entries.every(
       (entry) =>
           (state.inventory[entry.key] ?? 0.0) >= entry.value * stepFactor,
@@ -319,6 +352,9 @@ class GameEngine extends ChangeNotifier {
 
   void _allocatePurchasedBuilding(BuildingState building) {
     final type = building.type;
+    if (type.category == BuildingCategory.storage) {
+      return;
+    }
     if (type.category == BuildingCategory.mining) {
       final target = building.targetResource ?? ResourceType.ironOre;
       building.targetResource = target;

@@ -143,48 +143,97 @@ class BuildingsTab extends StatelessWidget {
                     ),
                   ],
                 ),
-                // Allocate owned machines across targets or recipes.
+                // Allocate owned machines across targets or recipes, or show storage status.
                 if (bldState.count > 0) ...[
                   const Divider(color: FactoryTheme.border, height: 20),
-                  Row(
-                    children: [
+                  if (bldType.category == BuildingCategory.storage) ...[
+                    Row(
+                      children: [
+                        const Text(
+                          'STORAGE VAULT',
+                          style: TextStyle(
+                            color: FactoryTheme.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '+${bldType.storageCapacity} / chest',
+                          style: const TextStyle(
+                            color: FactoryTheme.accentCyan,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: FactoryTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: FactoryTheme.border),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.inventory_2, color: FactoryTheme.accentCyan, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Vault holds +${FactoryTheme.formatNumber((bldType.storageCapacity * bldState.count).toDouble())} max capacity per resource type.',
+                              style: const TextStyle(
+                                color: FactoryTheme.textPrimary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        const Text(
+                          'MACHINE ALLOCATIONS',
+                          style: TextStyle(
+                            color: FactoryTheme.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${bldState.unassignedCount} unassigned',
+                          style: TextStyle(
+                            color: bldState.unassignedCount > 0
+                                ? FactoryTheme.accentAmber
+                                : FactoryTheme.textSecondary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (bldType.category == BuildingCategory.mining)
+                      _buildMinerAllocations(bldType, bldState)
+                    else if (bldType.category == BuildingCategory.smelting ||
+                        bldType.category == BuildingCategory.assembling ||
+                        bldType.category == BuildingCategory.rocketSilo)
+                      _buildRecipeAllocations(bldType, bldState)
+                    else
                       const Text(
-                        'MACHINE ALLOCATIONS',
+                        'All labs work on the technology selected in Research.',
                         style: TextStyle(
                           color: FactoryTheme.textSecondary,
                           fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.8,
                         ),
                       ),
-                      const Spacer(),
-                      Text(
-                        '${bldState.unassignedCount} unassigned',
-                        style: TextStyle(
-                          color: bldState.unassignedCount > 0
-                              ? FactoryTheme.accentAmber
-                              : FactoryTheme.textSecondary,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (bldType.category == BuildingCategory.mining)
-                    _buildMinerAllocations(bldType, bldState)
-                  else if (bldType.category == BuildingCategory.smelting ||
-                      bldType.category == BuildingCategory.assembling ||
-                      bldType.category == BuildingCategory.rocketSilo)
-                    _buildRecipeAllocations(bldType, bldState)
-                  else
-                    const Text(
-                      'All labs work on the technology selected in Research.',
-                      style: TextStyle(
-                        color: FactoryTheme.textSecondary,
-                        fontSize: 11,
-                      ),
-                    ),
+                  ],
                   const SizedBox(height: 10),
                   _buildOperationalStatus(bldType, bldState),
                 ],
@@ -331,32 +380,53 @@ class BuildingsTab extends StatelessWidget {
     late final String detail;
     var isComplete = false;
 
-    if (type.category == BuildingCategory.mining) {
+    if (type.category == BuildingCategory.storage) {
+      isRunning = true;
+      summary = 'ACTIVE — Expanding Storage Capacity';
+      final totalCapacity = type.storageCapacity * building.count;
+      detail = '+${FactoryTheme.formatNumber(totalCapacity.toDouble())} capacity to all resources';
+    } else if (type.category == BuildingCategory.mining) {
       final allocations = building.miningAllocations.entries
           .where((entry) => entry.value > 0)
           .toList();
+      final fullResources = allocations
+          .where((entry) => (state.inventory[entry.key] ?? 0) >= state.maxStorageFor(entry.key))
+          .map((entry) => entry.key.label)
+          .toList();
+      final activeAllocations = allocations
+          .where((entry) => (state.inventory[entry.key] ?? 0) < state.maxStorageFor(entry.key))
+          .toList();
+      final activeCount = activeAllocations.fold<int>(0, (sum, e) => sum + e.value);
+
       final fullOutputRate =
-          type.craftSpeed * building.allocatedCount * multiplier;
+          type.craftSpeed * activeCount * multiplier;
       final fuelRate = type == BuildingType.burnerMiner
-          ? 0.1 * building.allocatedCount * multiplier
+          ? 0.1 * activeCount * multiplier
           : 0.0;
       final fuelNeededPerTick = fuelRate / GameEngine.ticksPerSecond;
       final availableFuel = state.inventory[ResourceType.coal] ?? 0;
       final activityRatio = fuelNeededPerTick > 0
           ? min(1.0, availableFuel / fuelNeededPerTick)
           : 1.0;
+
       if (allocations.isEmpty) {
         isRunning = false;
         summary = 'STOPPED — No machines assigned';
         detail = '${building.count} machines are idle';
+      } else if (activeAllocations.isEmpty) {
+        isRunning = false;
+        summary = 'PAUSED — Storage Full (${fullResources.join(', ')})';
+        detail = 'Build chests to expand storage capacity';
       } else if (type == BuildingType.burnerMiner && activityRatio == 0) {
         isRunning = false;
         summary = 'STOPPED — Missing Coal fuel';
-        detail = '${building.allocatedCount} assigned machines are idle';
+        detail = '$activeCount assigned machines are idle';
       } else {
         isRunning = true;
         summary = activityRatio < 1
             ? 'THROTTLED — ${(activityRatio * 100).toStringAsFixed(0)}% fuel supply'
+            : fullResources.isNotEmpty
+            ? 'PARTIAL — $activeCount/${building.count} miners active (${fullResources.join(', ')} full)'
             : 'RUNNING — ${building.allocatedCount}/${building.count} miners active';
         detail =
             '${(fullOutputRate * activityRatio).toStringAsFixed(1)}/s total output'
@@ -399,10 +469,18 @@ class BuildingsTab extends StatelessWidget {
         detail = 'No more materials will be consumed';
       } else {
         final missing = <String>{};
+        final fullOutputs = <String>{};
         var runningAllocations = 0;
         for (final allocation in allocations) {
           final recipe = Recipe.getById(allocation.key);
           if (recipe == null) continue;
+          final isFull = recipe.outputs.keys.every(
+            (outRes) => (state.inventory[outRes] ?? 0) >= state.maxStorageFor(outRes),
+          );
+          if (isFull) {
+            fullOutputs.addAll(recipe.outputs.keys.map((r) => r.label));
+            continue;
+          }
           final cyclesPerSecond =
               GameEngine.ticksPerSecond /
               recipe.durationTicks *
@@ -427,6 +505,8 @@ class BuildingsTab extends StatelessWidget {
             ? 'RUNNING — $runningAllocations production lines active'
             : runningAllocations > 0
             ? 'PARTIAL — $runningAllocations/${allocations.length} lines running'
+            : fullOutputs.isNotEmpty
+            ? 'PAUSED — Storage Full (${fullOutputs.join(', ')})'
             : 'STOPPED — Missing ${missing.join(' + ')}';
         detail =
             '${building.allocatedCount}/${building.count} machines assigned';

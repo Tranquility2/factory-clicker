@@ -560,6 +560,8 @@ class FactoryVisualizerGame extends FlameGame {
         _drawLabActivity(canvas, rect, node.color, index);
       case BuildingCategory.rocketSilo:
         _drawRocketActivity(canvas, rect, node.color, index);
+      case BuildingCategory.storage:
+        break;
     }
     canvas.restore();
   }
@@ -874,6 +876,9 @@ List<_FactoryNode> _buildFactoryNodes(GameState state) {
     final hasFuel = !needsFuel || activityRatio > 0;
     for (final allocation in building.miningAllocations.entries) {
       if (allocation.value <= 0) continue;
+      final isFull = (state.inventory[allocation.key] ?? 0) >=
+          state.maxStorageFor(allocation.key);
+      final isRunning = hasFuel && !isFull;
       nodes.add(
         _FactoryNode(
           type: type,
@@ -884,8 +889,10 @@ List<_FactoryNode> _buildFactoryNodes(GameState state) {
           inputs: needsFuel ? {ResourceType.coal} : const {},
           outputs: {allocation.key},
           color: color,
-          isRunning: hasFuel,
-          statusLabel: !hasFuel
+          isRunning: isRunning,
+          statusLabel: isFull
+              ? 'STORAGE FULL'
+              : !hasFuel
               ? 'NEEDS COAL'
               : activityRatio < 1
               ? 'THROTTLED'
@@ -904,6 +911,10 @@ List<_FactoryNode> _buildFactoryNodes(GameState state) {
       if (recipe == null) continue;
       final isComplete =
           type == BuildingType.rocketSilo && state.rocketPartsBuilt >= 100;
+      final isOutputFull = recipe.outputs.keys.any(
+        (outRes) =>
+            (state.inventory[outRes] ?? 0) >= state.maxStorageFor(outRes),
+      );
       final stepFactor =
           (1 / recipe.durationTicks) *
           type.craftSpeed *
@@ -917,7 +928,7 @@ List<_FactoryNode> _buildFactoryNodes(GameState state) {
           )
           .map((entry) => entry.key.label.toUpperCase())
           .toList();
-      final hasInputs = !isComplete && missingInputs.isEmpty;
+      final hasInputs = !isComplete && !isOutputFull && missingInputs.isEmpty;
       nodes.add(
         _FactoryNode(
           type: type,
@@ -933,6 +944,8 @@ List<_FactoryNode> _buildFactoryNodes(GameState state) {
           isRunning: hasInputs,
           statusLabel: isComplete
               ? 'READY'
+              : isOutputFull
+              ? 'OUTPUT FULL'
               : hasInputs
               ? 'RUNNING'
               : 'NEEDS ${missingInputs.join(' + ')}',

@@ -80,7 +80,29 @@ class GameState {
     return map;
   }
 
+  static const double baseStorageCapacity = 100.0;
+
   double get prestigeMultiplier => 1.0 + (spaceScienceCount * 0.1);
+
+  double get maxStorageCapacity {
+    double total = baseStorageCapacity;
+    for (final entry in buildings.entries) {
+      if (entry.key.category == BuildingCategory.storage) {
+        total += entry.key.storageCapacity * entry.value.count;
+      }
+    }
+    return total;
+  }
+
+  double maxStorageFor(ResourceType type) {
+    if (type == ResourceType.spaceScience) {
+      return double.infinity;
+    }
+    if (type == ResourceType.rocketPart) {
+      return 100.0;
+    }
+    return maxStorageCapacity;
+  }
 
   bool isTechUnlocked(String techId) => unlockedTechIds.contains(techId);
 
@@ -92,7 +114,8 @@ class GameState {
   bool isBuildingUnlocked(BuildingType type) {
     if (type == BuildingType.burnerMiner ||
         type == BuildingType.stoneFurnace ||
-        type == BuildingType.researchLab) {
+        type == BuildingType.researchLab ||
+        type == BuildingType.woodenChest) {
       return true;
     }
     for (final tech in Technology.all) {

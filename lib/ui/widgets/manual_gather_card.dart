@@ -95,9 +95,13 @@ class _GatherButtonState extends State<_GatherButton>
   @override
   Widget build(BuildContext context) {
     final color = _resourceColor(widget.resource);
+    final current = widget.engine.state.inventory[widget.resource] ?? 0;
+    final maxCap = widget.engine.state.maxStorageFor(widget.resource);
+    final isFull = current >= maxCap;
+
     return Semantics(
       identifier: 'gather-btn-${widget.resource.name}',
-      label: 'Gather ${widget.resource.label}',
+      label: 'Gather ${widget.resource.label}${isFull ? ' (Storage Full)' : ''}',
       button: true,
       child: AnimatedBuilder(
         animation: _impact,
@@ -119,10 +123,12 @@ class _GatherButtonState extends State<_GatherButton>
                   scale: impactScale,
                   child: ElevatedButton.icon(
                     key: ValueKey('btn-gather-${widget.resource.name}'),
-                    onPressed: () {
-                      widget.engine.manualGather(widget.resource);
-                      _impact.forward(from: 0);
-                    },
+                    onPressed: isFull
+                        ? null
+                        : () {
+                            widget.engine.manualGather(widget.resource);
+                            _impact.forward(from: 0);
+                          },
                     icon: Transform.rotate(
                       angle: sin(progress * pi) * -0.18,
                       child: Text(
@@ -130,20 +136,30 @@ class _GatherButtonState extends State<_GatherButton>
                         style: const TextStyle(fontSize: 18),
                       ),
                     ),
-                    label: Text('Mine ${widget.resource.label}'),
+                    label: Text(
+                      isFull
+                          ? 'Mine ${widget.resource.label} (FULL)'
+                          : 'Mine ${widget.resource.label}',
+                    ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Color.lerp(
-                        FactoryTheme.surfaceLight,
-                        color,
-                        sin(progress * pi) * 0.22,
-                      ),
-                      foregroundColor: FactoryTheme.textPrimary,
+                      backgroundColor: isFull
+                          ? FactoryTheme.surfaceLight
+                          : Color.lerp(
+                              FactoryTheme.surfaceLight,
+                              color,
+                              sin(progress * pi) * 0.22,
+                            ),
+                      foregroundColor: isFull
+                          ? FactoryTheme.accentRed
+                          : FactoryTheme.textPrimary,
                       side: BorderSide(
-                        color: Color.lerp(
-                          FactoryTheme.border,
-                          color,
-                          sin(progress * pi),
-                        )!,
+                        color: isFull
+                            ? FactoryTheme.accentRed.withValues(alpha: 0.5)
+                            : Color.lerp(
+                                FactoryTheme.border,
+                                color,
+                                sin(progress * pi),
+                              )!,
                       ),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,

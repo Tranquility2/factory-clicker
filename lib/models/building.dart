@@ -3,7 +3,7 @@ import 'dart:math';
 import 'recipe.dart';
 import 'resource_type.dart';
 
-enum BuildingCategory { mining, smelting, assembling, researchLab, rocketSilo }
+enum BuildingCategory { mining, smelting, assembling, researchLab, rocketSilo, storage }
 
 enum BuildingType {
   burnerMiner(
@@ -106,6 +106,39 @@ enum BuildingType {
     costMultiplier: 2.0,
     craftSpeed: 1.0,
     icon: '🚀',
+  ),
+  woodenChest(
+    id: 'wooden_chest',
+    name: 'Wooden Chest',
+    description: 'Simple storage crate. Adds +100 to all resource storage limits.',
+    category: BuildingCategory.storage,
+    baseCost: {ResourceType.stone: 10, ResourceType.coal: 5},
+    costMultiplier: 1.15,
+    craftSpeed: 0.0,
+    storageCapacity: 100,
+    icon: '📦',
+  ),
+  ironChest(
+    id: 'iron_chest',
+    name: 'Iron Chest',
+    description: 'Reinforced metal container. Adds +500 to all resource storage limits.',
+    category: BuildingCategory.storage,
+    baseCost: {ResourceType.ironPlate: 20, ResourceType.ironGear: 10},
+    costMultiplier: 1.2,
+    craftSpeed: 0.0,
+    storageCapacity: 500,
+    icon: '🧰',
+  ),
+  steelChest(
+    id: 'steel_chest',
+    name: 'Steel Chest',
+    description: 'High-capacity industrial alloy vault. Adds +2,500 to all resource storage limits.',
+    category: BuildingCategory.storage,
+    baseCost: {ResourceType.steelPlate: 25, ResourceType.electronicCircuit: 10},
+    costMultiplier: 1.25,
+    craftSpeed: 0.0,
+    storageCapacity: 2500,
+    icon: '🗄️',
   );
 
   final String id;
@@ -115,6 +148,7 @@ enum BuildingType {
   final Map<ResourceType, int> baseCost;
   final double costMultiplier;
   final double craftSpeed;
+  final int storageCapacity;
   final String icon;
 
   const BuildingType({
@@ -125,6 +159,7 @@ enum BuildingType {
     required this.baseCost,
     required this.costMultiplier,
     required this.craftSpeed,
+    this.storageCapacity = 0,
     required this.icon,
   });
 
